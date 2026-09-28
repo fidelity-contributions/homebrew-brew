@@ -98,32 +98,31 @@ module Cask
       begin
         yield path
       rescue
+        target = path.cleanpath
+        flags = target.symlink? ? ["-h"] : command_args
+
         # in case of permissions problems
         unless tried_permissions
           print_stderr = Context.current.debug? || Context.current.verbose?
-          # TODO: Better handling for the case where path is a symlink.
-          #       The `-h` and `-R` flags cannot be combined and behavior is
-          #       dependent on whether the file argument has a trailing
-          #       slash. This should do the right thing, but is fragile.
           command.run("/usr/bin/chflags",
                       print_stderr:,
-                      args:         command_args + ["--", "000", path])
+                      args:         flags + ["--", "000", target])
           command.run("chmod",
                       print_stderr:,
-                      args:         command_args + ["--", "u+rwx", path])
+                      args:         flags + ["--", "u+rwx", target])
           command.run("chmod",
                       print_stderr:,
-                      args:         command_args + ["-N", path])
+                      args:         flags + ["-N", target])
           tried_permissions = true
           retry # rmtree
         end
 
         # in case of ownership problems
-        recursive = command_args.include?("-R")
-        if !tried_ownership && ownership_problem?(path, recursive:)
+        recursive = flags.include?("-R")
+        if !tried_ownership && ownership_problem?(target, recursive:)
           ohai "Using sudo to gain ownership of path '#{path}'"
           command.run("chown",
-                      args: command_args + ["--", User.current.to_s, path],
+                      args: flags + ["--", User.current.to_s, target],
                       sudo: true)
           tried_ownership = true
           # retry chflags/chmod after chown

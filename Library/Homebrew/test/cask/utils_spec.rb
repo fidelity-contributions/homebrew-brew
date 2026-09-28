@@ -156,5 +156,15 @@ RSpec.describe Cask::Utils do
         described_class.gain_permissions(file, [], command) { raise Errno::EACCES, file.to_s }
       end.to raise_error(Errno::EACCES)
     end
+
+    it "does not follow a symlink given with a trailing slash" do
+      link.make_symlink(path.tap(&:mkpath))
+      allow(command).to receive(:run)
+      expect(command).to receive(:run).with("chmod", hash_including(args: ["-h", "--", "u+rwx", link]))
+
+      expect do
+        described_class.gain_permissions(Pathname("#{link}/"), ["-R"], command) { raise Errno::EACCES, link.to_s }
+      end.to raise_error(Errno::EACCES)
+    end
   end
 end
