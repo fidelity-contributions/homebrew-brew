@@ -358,7 +358,7 @@ module Homebrew
           require "utils/git"
           output = Utils.safe_popen_read(
             Utils::Git.git, "-C", repository_path, "log", ref, "--since=#{from}", "--before=#{to}",
-            "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%B%x1e"
+            "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e"
           )
           authored_pull_requests = users.keys.to_h { |user| [user, Set.new] }
           merged_pull_requests = users.keys.to_h { |user| [user, Set.new] }
@@ -572,15 +572,17 @@ module Homebrew
           identity_users[identity] ||= user if user
         end
         records = output.split("\x1e").filter_map do |record|
-          fields = record.strip.split("\x1f", 5)
-          fields if fields.length == 5
+          fields = record.strip.split("\x1f", 7)
+          fields if fields.length >= 5
         end
         record_identities = records.to_h do |fields|
           [fields.fetch(0), [fields.fetch(2), fields.fetch(3)]]
         end
+
+        # Resolve identities for each commit based on the author and committer information
         records.each do |fields|
           parents = fields.fetch(1).split
-          source_owner = fields.fetch(4)[%r{\AMerge pull request #\d+ from ([^/\s]+)/}, 1]
+          source_owner = fields.fetch(fields.length - 1)[%r{\AMerge pull request #\d+ from ([^/\s]+)/}, 1]
           next if parents.length < 2 || source_owner.nil?
 
           user = identity_users[source_owner.downcase]
@@ -591,6 +593,8 @@ module Homebrew
           identity_users[name.strip.downcase] ||= user
           identity_users[email.downcase] ||= user
         end
+
+        # Map commit SHAs to their respective authors based on identity resolution
         commit_authors = T.let(records.to_h do |fields|
           sha = fields.fetch(0)
           author_name = fields.fetch(2)
@@ -598,16 +602,25 @@ module Homebrew
           [sha, user_for_git_identity(author_name, author_email, identity_users)]
         end, T::Hash[String, T.nilable(String)])
 
+        # Coauthor contributions with "Co-authored-by" in body
         records.each do |fields|
           parents_string = fields.fetch(1)
           author_name = fields.fetch(2)
           author_email = fields.fetch(3)
-          body = fields.fetch(4)
+          body = fields.fetch(fields.length - 1)
           coauthors = body.scan(/^Co-authored-by:\s*(.*?)\s*<([^>]+)>/i).filter_map do |match|
             next unless match.is_a?(Array)
 
             user_for_git_identity(match.fetch(0), match.fetch(1), identity_users)
           end
+
+          # Coauthor information from amended commit fields
+          if [author_name, author_email] != [fields.fetch(4), fields.fetch(5)]
+            coauthor = user_for_git_identity(fields.fetch(4), fields.fetch(5), identity_users)
+            coauthors << coauthor if coauthor
+          end
+
+          # Increment coauthor contribution counts
           coauthors.uniq.each do |user|
             increment_contribution_count(counts.fetch(user), :coauthor)
           end

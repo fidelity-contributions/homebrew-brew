@@ -662,6 +662,28 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     )
   end
 
+  it "attributes amended committers as coauthors" do
+    command = described_class.new(["--maintainer-report-csv=2026-1"])
+    separator = "\x1f"
+    record_separator = "\x1e"
+    base = ["base", "", "Maintainer", "maintainer@example.com", "Maintainer", "maintainer@example.com", "Base"]
+           .join(separator)
+    amended = [
+      "amended", "base", "Alice Example", "alice@example.com", "Bob Example", "bob@example.com", "Change something"
+    ].join(separator)
+    merge = [
+      "merge", "base amended", "Alice Example", "alice@example.com", "Alice Example", "alice@example.com",
+      "Merge pull request #123 from Homebrew/topic"
+    ].join(separator)
+
+    counts = command.parse_git_log(
+      "#{merge}#{record_separator}#{amended}#{record_separator}#{base}#{record_separator}",
+      { "alice" => "Alice Example", "bob" => "Bob Example" },
+    )
+
+    expect(counts.fetch("bob").fetch(:coauthor)).to eq(1)
+  end
+
   it "matches commits under a GitHub profile's name and email for a username" do
     command = described_class.new(["--user=alice", "--repositories=Homebrew/homebrew-core"])
     repository = "Homebrew/homebrew-core"
