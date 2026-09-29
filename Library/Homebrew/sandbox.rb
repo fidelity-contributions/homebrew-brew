@@ -636,6 +636,9 @@ class Sandbox
   sig { void }
   def allow_write_xcode; end
 
+  sig { void }
+  def allow_read_git_credential_store; end
+
   sig { params(formula: Formula).void }
   def allow_write_log(formula)
     allow_write_path formula.logs

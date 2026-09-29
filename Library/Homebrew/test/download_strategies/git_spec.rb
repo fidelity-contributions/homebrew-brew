@@ -68,6 +68,38 @@ RSpec.describe GitDownloadStrategy do
       end).to contain_exactly((home/".aws").to_s, (home/".npmrc").to_s)
     end
 
+    context "with a login keychain", :needs_macos do
+      let(:keychain) { home/"Library/Keychains/login.keychain-db" }
+
+      before do
+        keychain.dirname.mkpath
+        FileUtils.touch keychain
+        FileUtils.touch keychain.dirname/"metadata.keychain-db"
+      end
+
+      it "allows only the login keychain file for HTTPS downloads" do
+        keychains = keychain.dirname.realpath.to_s
+
+        expect(strategy.command_sandbox.profile.rules.filter_map do |rule|
+          next if rule.operation != "file-read*" || !rule.filter&.path&.start_with?(keychains)
+
+          [rule.allow, rule.filter&.path, rule.filter&.type]
+        end).to eq([
+          [false, keychains, :subpath],
+          [true, keychain.realpath.to_s, :literal],
+        ])
+      end
+
+      context "with an SSH URL" do
+        let(:url) { "git@git.example.com:repo.git" }
+
+        it "does not allow the login keychain" do
+          expect(strategy.command_sandbox.profile.rules.select(&:allow).map { |rule| rule.filter&.path })
+            .not_to include(keychain.realpath.to_s)
+        end
+      end
+    end
+
     it "does not probe Git or SSH configuration" do
       expect(SystemCommand).not_to receive(:run)
 
