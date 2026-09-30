@@ -156,10 +156,24 @@ RSpec.describe Sandbox do
       expect(JSON.parse(result.stdout)).to eq([Dir.home(ENV.fetch("USER")), ENV.fetch("SSH_AUTH_SOCK")])
     end
 
-    it "preserves the working directory for relative command arguments" do
+    test_each([0, 1]) do |status|
+      it "uses a private working directory without changing the parent's when exiting #{status}" do
+        directory = Dir.pwd
+        result = Thread.new do
+          sandbox.capture(RbConfig.ruby, must_succeed: false, args: ["-e", <<~RUBY])
+            puts Dir.pwd == File.realpath(ENV.fetch("TMPDIR"))
+            exit #{status}
+          RUBY
+        end.value
+
+        expect([result.stdout, result.exit_status, Dir.pwd]).to eq(["true\n", status, directory])
+      end
+    end
+
+    it "honours an explicit working directory for relative command arguments" do
       directory = mktmpdir
       (directory/"input").write("content")
-      result = directory.cd { sandbox.capture("cat", args: ["input"]) }
+      result = sandbox.capture("cat", args: ["input"], chdir: directory)
 
       expect(result.stdout).to eq("content")
     end
