@@ -346,6 +346,7 @@ module Homebrew
                build_from_source_formulae: T::Array[String], interactive: T::Boolean, keep_tmp: T::Boolean,
                debug_symbols: T::Boolean, force: T::Boolean, debug: T::Boolean, quiet: T::Boolean,
                verbose: T::Boolean, skip_formula_names: T::Array[String], cleanup: T::Boolean,
+               show_pinned_summary: T::Boolean,
                prefetched_formula_installers: T.nilable(T::Array[FormulaInstaller])).returns(T::Array[Formula])
       }
       def upgrade_dependents(deps, formulae,
@@ -363,13 +364,14 @@ module Homebrew
                              verbose: false,
                              skip_formula_names: [],
                              cleanup: true,
+                             show_pinned_summary: true,
                              prefetched_formula_installers: nil)
         return [] if deps.blank?
 
         upgradeable = deps.upgradeable.dup
         pinned      = deps.pinned
         skipped     = deps.skipped
-        if pinned.present?
+        if pinned.present? && show_pinned_summary
           plural = Utils.pluralize("dependent", pinned.count)
           opoo "Not upgrading #{pinned.count} pinned #{plural}:"
           puts(pinned.map do |f|

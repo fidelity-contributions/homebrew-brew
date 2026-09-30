@@ -45,8 +45,7 @@ module Homebrew
         switch "--ask",
                description: "Ask for confirmation before downloading and reinstalling. " \
                             "Print what would be reinstalled before prompting. Only prompts if the plan " \
-                            "includes dependencies or dependants; if the requested formulae or casks are the " \
-                            "only things to reinstall, it only prints the plan. The confirmation prompt is " \
+                            "includes dependencies or dependants. The confirmation prompt is " \
                             "skipped without a TTY. This is the default unless `$HOMEBREW_NO_ASK` is set.",
                env:         :ask,
                replacement: "the default behaviour",

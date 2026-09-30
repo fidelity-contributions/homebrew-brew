@@ -214,12 +214,16 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     install_formula_version "gh", "2.93.0", optlinked: true
     install_formula_version "visual-studio-code", "1.111.0", optlinked: true
     stub_formula_upgrade_installers
+    allow(Homebrew::Upgrade).to receive(:upgrade_formulae) do |installers, **|
+      installers.each { |installer| Homebrew.messages.package_installed(installer.formula.full_name, 0.0) }
+      installers
+    end
     allow(Homebrew::Cleanup).to receive(:periodic_clean!)
     allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
     allow(Homebrew.messages).to receive(:display_messages)
 
     expected_summary = <<~EOS
-      ==> Upgrading 2 outdated packages:
+      ==> Upgraded 2 requested outdated packages
       gh                  2.93.0  -> 2.95.0
       visual-studio-code  1.111.0 -> 1.125.1
     EOS
@@ -231,38 +235,20 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
 
   it "describes unresolved HEAD formula upgrades as latest HEAD", :no_api do
     install_head_formula_version "head-formula", "1234567"
-    stub_formula_upgrade_installers
-    allow(Homebrew::Cleanup).to receive(:periodic_clean!)
-    allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
-    allow(Homebrew.messages).to receive(:display_messages)
+    cmd = described_class.new(["--yes", "--formula", "head-formula"])
 
-    expected_summary = <<~EOS
-      ==> Upgrading 1 outdated package:
-      head-formula HEAD-1234567 -> latest HEAD
-    EOS
-
-    expect do
-      described_class.new(["--yes", "--formula", "head-formula"]).run
-    end.to output(a_string_starting_with(expected_summary)).to_stdout
+    expect(cmd.formula_upgrade_descriptions(cmd.args.named.to_resolved_formulae))
+      .to eq(["head-formula HEAD-1234567 -> latest HEAD"])
   end
 
   it "describes fetched HEAD formula upgrades with the resolved commit", :no_api do
     install_head_formula_version "head-formula", "1234567"
     allow_any_instance_of(Formula).to receive(:latest_head_pkg_version)
       .and_return(PkgVersion.parse("HEAD-7654321"))
-    stub_formula_upgrade_installers
-    allow(Homebrew::Cleanup).to receive(:periodic_clean!)
-    allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
-    allow(Homebrew.messages).to receive(:display_messages)
+    cmd = described_class.new(["--yes", "--fetch-HEAD", "--formula", "head-formula"])
 
-    expected_summary = <<~EOS
-      ==> Upgrading 1 outdated package:
-      head-formula HEAD-1234567 -> HEAD-7654321
-    EOS
-
-    expect do
-      described_class.new(["--yes", "--fetch-HEAD", "--formula", "head-formula"]).run
-    end.to output(a_string_starting_with(expected_summary)).to_stdout
+    expect(cmd.formula_upgrade_descriptions(cmd.args.named.to_resolved_formulae))
+      .to eq(["head-formula HEAD-1234567 -> HEAD-7654321"])
   end
 
   it "skips fetched HEAD formula upgrades when the resolved commit is unchanged", :no_api do
@@ -312,6 +298,134 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     warning = "Warning: Not upgrading local-caffeine, the latest version is already installed\n"
     expect { described_class.new(["--cask", "local-caffeine"]).run }
       .to output(satisfy { |stderr| stderr.scan(warning).one? }).to_stderr
+  end
+
+  context "with pinned formulae", :no_api do
+    before do
+      write_formula "pinnedball", <<~RUBY
+        url "https://brew.sh/pinnedball-2.0"
+      RUBY
+      install_formula_version "pinnedball", "1.0"
+      Formula["pinnedball"].pin
+      allow(Homebrew::Cleanup).to receive(:periodic_clean!)
+      allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
+      allow(Homebrew.messages).to receive(:display_messages)
+    end
+
+    after { Formula["pinnedball"].unpin }
+
+    test_each([[], ["--yes"], ["--dry-run"]]) do |flags|
+      it "lists pinned formula versions once with #{flags.presence || "default options"}" do
+        expect { described_class.new(["--formula", *flags]).run }
+          .to output("==> 1 Pinned formula\npinnedball 1.0 -> 2.0\n").to_stdout
+          .and not_to_output(/Not upgrading.*pinned/).to_stderr
+      end
+    end
+
+    it "fails for an explicitly named pinned formula with --quiet" do
+      expect { described_class.new(["pinnedball", "--quiet"]).run }
+        .to change(Homebrew, :failed?).from(false).to(true)
+    end
+  end
+
+  context "with pinned casks", :cask do
+    test_each([[], ["--yes"], ["--dry-run"]]) do |flags|
+      it "lists pinned cask versions once with #{flags.presence || "default options"}" do
+        %w[local-caffeine local-transmission-zip].each do |token|
+          InstallHelper.stub_cask_installation(Cask::CaskLoader.load(cask_path("outdated/#{token}")))
+          Cask::CaskLoader.load(token).pin
+        end
+        allow(Homebrew::Cleanup).to receive(:periodic_clean!)
+        allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
+        allow(Homebrew.messages).to receive(:display_messages)
+
+        expect { described_class.new(["--cask", *flags]).run }
+          .to output(<<~EOS).to_stdout.and not_to_output(/Not upgrading.*pinned/).to_stderr
+            ==> 2 Pinned casks
+            local-caffeine          1.2.2 -> 1.2.3
+            local-transmission-zip  2.60  -> 2.61
+          EOS
+      ensure
+        %w[local-caffeine local-transmission-zip].each { |token| Cask::CaskLoader.load(token).unpin }
+      end
+    end
+  end
+
+  it "lists pinned dependents only in the final summary" do
+    cmd = described_class.new(["--formula", "--dry-run"])
+    pinned = formula("pinnedball") do
+      T.bind(self, T.class_of(Formula))
+      url "https://brew.sh/pinnedball-2.0"
+    end
+    install_formula_version "pinnedball", "1.0"
+    allow(cmd).to receive(:formulae_upgrade_context).and_return(
+      Homebrew::Cmd::UpgradeCmd::FormulaeUpgradeContext.new(
+        formulae_to_install: [],
+        formulae_installer:  [],
+        dependants:          Homebrew::Upgrade::Dependents.new(upgradeable: [], pinned: [pinned], skipped: []),
+      ),
+    )
+    allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
+
+    expect { cmd.run }
+      .to output("==> 1 Pinned formula\npinnedball 1.0 -> 2.0\n").to_stdout
+      .and not_to_output(/Not upgrading.*pinned/).to_stderr
+  end
+
+  it "does not repeat unchanged summary sections after a short upgrade" do
+    allow(Homebrew).to receive(:messages).and_return(Messages.new)
+    cmd = described_class.new([])
+    cmd.final_upgrade_summary.pinned_formulae << "pinnedball 1.0 -> 2.0"
+    cmd.final_upgrade_summary.deprecated << "pinnedball"
+
+    expect do
+      cmd.show_final_upgrade_summary(dry_run: true)
+      Homebrew.messages.package_installed("testball", 0.0)
+      cmd.final_upgrade_summary.version_changes << "testball 0.1 -> 0.2"
+      cmd.show_final_upgrade_summary
+    end.to output(<<~EOS).to_stdout
+      ==> 1 Pinned formula
+      pinnedball 1.0 -> 2.0
+      ==> 1 Deprecated or disabled package
+      pinnedball (deprecated)
+    EOS
+  end
+
+  it "repeats unchanged summary sections after two package changes" do
+    allow(Homebrew).to receive(:messages).and_return(Messages.new)
+    cmd = described_class.new([])
+    cmd.final_upgrade_summary.pinned_formulae << "pinnedball 1.0 -> 2.0"
+    cmd.final_upgrade_summary.pinned_casks << "pinned-cask 2.0 -> 3.0"
+    cmd.final_upgrade_summary.deprecated << "pinnedball"
+
+    expect do
+      cmd.show_final_upgrade_summary(dry_run: true)
+      %w[installed-dependency reinstalled-dependent].each do |name|
+        Homebrew.messages.package_installed(name, 0.0)
+      end
+      cmd.show_final_upgrade_summary
+    end.to output(<<~EOS * 2).to_stdout
+      ==> 1 Pinned formula
+      pinnedball 1.0 -> 2.0
+      ==> 1 Pinned cask
+      pinned-cask 2.0 -> 3.0
+      ==> 1 Deprecated or disabled package
+      pinnedball (deprecated)
+    EOS
+  end
+
+  test_each([0, 1]) do |package_count|
+    it "omits upgrade summaries for #{package_count} completed package changes" do
+      allow(Homebrew).to receive(:messages).and_return(Messages.new)
+      cmd = described_class.new([])
+      cmd.final_upgrade_summary.version_changes.push("testball 0.1 -> 0.2", "secondball 1.0 -> 2.0")
+
+      expect do
+        cmd.show_final_upgrade_summary(dry_run: true)
+        package_count.times { Homebrew.messages.package_installed("testball", 0.0) }
+        cmd.show_final_upgrade_summary
+      end.not_to output.to_stdout
+    end
   end
 
   it "does not summarize dry-run formula upgrades blocked by pinned dependencies" do
@@ -468,7 +582,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
       .ordered
       .and_return(true)
     allow(cmd).to receive(:show_final_upgrade_summary).and_call_original
-    expect(cmd).to receive(:show_final_upgrade_summary).with(dry_run: true).ordered
+    expect(cmd).to receive(:show_final_upgrade_summary).with(dry_run: true, show_upgrade_summary: true).ordered
     expect(Homebrew::Install).to receive(:ask).with(action: "upgrade")
                                               .ordered
     expect(Cask::Upgrade).not_to receive(:show_upgrade_summary)
@@ -570,49 +684,60 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
            )).to be(false)
   end
 
-  it "asks before upgrading formulae that resolve from a different name" do
-    formula = formula("testball") do
-      T.bind(self, T.class_of(Formula))
-      url "https://brew.sh/testball-0.2"
-    end
-    cmd = described_class.new(["oldtestball"])
-    download_queue = instance_double(Homebrew::DownloadQueue, fetch: nil, failed_downloads: [], shutdown: nil,
-                                     print_heading: nil)
-    allow(cmd.args.named).to receive(:to_formulae_and_casks_and_unavailable)
-      .with(method: :resolve)
-      .and_return([formula])
-
-    expect(cmd).to receive(:upgrade_outdated_formulae!)
-      .with([formula], dry_run: true, show_upgrade_summary: false)
-      .ordered do
-        cmd.final_upgrade_summary.version_changes << "testball 0.1 -> 0.2"
-        true
+  test_each(%w[testball oldtestball]) do |requested_name|
+    it "only shows the upgrade plan when prompting for #{requested_name}" do
+      formula = formula("testball") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/testball-0.2"
       end
-    allow(cmd).to receive(:show_final_upgrade_summary).and_call_original
-    expect(cmd).to receive(:show_final_upgrade_summary).with(dry_run: true).ordered
-    expect(Homebrew::Install).to receive(:ask).with(action: "upgrade").ordered
-    expect(Homebrew::DownloadQueue).to receive(:new).ordered.and_return(download_queue)
-    expect(cmd).to receive(:upgrade_outdated_formulae!)
-      .with(
-        [formula],
-        prefetch_only:        true,
-        download_queue:,
-        prefetch_names:       [],
-        prefetch_upgrades:    [],
-        show_upgrade_summary: false,
-      )
-      .ordered
-      .and_return(true)
-    expect(download_queue).to receive(:fetch).ordered
-    expect(cmd).to receive(:upgrade_outdated_formulae!)
-      .with([formula], use_prefetched: true, show_upgrade_summary: false)
-      .ordered
-      .and_return(true)
-    allow(Homebrew::Cleanup).to receive(:periodic_clean!)
-    allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
-    allow(Homebrew.messages).to receive(:display_messages)
+      cmd = described_class.new([requested_name])
+      download_queue = instance_double(Homebrew::DownloadQueue, fetch: nil, failed_downloads: [], shutdown: nil,
+                                       print_heading: nil)
+      allow(cmd.args.named).to receive(:to_formulae_and_casks_and_unavailable)
+        .with(method: :resolve)
+        .and_return([formula])
 
-    expect { cmd.run }.to output(/testball 0\.1 -> 0\.2/).to_stdout
+      expect(cmd).to receive(:upgrade_outdated_formulae!)
+        .with([formula], dry_run: true, show_upgrade_summary: false)
+        .ordered do
+          cmd.final_upgrade_summary.version_changes << "testball 0.1 -> 0.2"
+          true
+        end
+      allow(cmd).to receive(:show_final_upgrade_summary).and_call_original
+      if requested_name == "testball"
+        expect(Homebrew::Install).not_to receive(:ask)
+      else
+        expect(cmd).to receive(:show_final_upgrade_summary).with(dry_run: true, show_upgrade_summary: true).ordered
+        expect(Homebrew::Install).to receive(:ask).with(action: "upgrade").ordered
+      end
+      expect(Homebrew::DownloadQueue).to receive(:new).ordered.and_return(download_queue)
+      expect(cmd).to receive(:upgrade_outdated_formulae!)
+        .with(
+          [formula],
+          prefetch_only:        true,
+          download_queue:,
+          prefetch_names:       [],
+          prefetch_upgrades:    [],
+          show_upgrade_summary: false,
+        )
+        .ordered
+        .and_return(true)
+      expect(download_queue).to receive(:fetch).ordered
+      expect(cmd).to receive(:upgrade_outdated_formulae!)
+        .with([formula], use_prefetched: true, show_upgrade_summary: false)
+        .ordered
+        .and_return(true)
+      allow(Homebrew::Cleanup).to receive(:periodic_clean!)
+      allow(Homebrew::Reinstall).to receive(:reinstall_pkgconf_if_needed!)
+      allow(Homebrew.messages).to receive(:display_messages)
+
+      expected_summary = if requested_name == "testball"
+        ""
+      else
+        "==> Would upgrade 1 requested outdated package\ntestball 0.1 -> 0.2\n"
+      end
+      expect { cmd.run }.to output(expected_summary).to_stdout
+    end
   end
 
   it "prints formula download sizes in dry-run upgrade summaries" do
@@ -839,7 +964,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     cmd.run
   end
 
-  it "prints a combined upgrade summary before fetching combined downloads" do
+  it "fetches combined downloads without a premature upgrade summary" do
     cmd = described_class.new(["-y"])
     download_queue = instance_double(Homebrew::DownloadQueue, fetch: nil, failed_downloads: [], shutdown: nil,
                                      print_heading: nil)
@@ -886,11 +1011,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
       .with(heading: "Fetching dependency downloads")
       .ordered
 
-    expect { cmd.run }.to output(<<~EOS).to_stdout
-      ==> Upgrading 2 outdated packages:
-      deno   2.7.10  -> 2.7.11
-      codex  0.117.0 -> 0.118.0
-    EOS
+    expect { cmd.run }.not_to output.to_stdout
   end
 
   it "prefetches a named formula-only upgrade before installing" do
@@ -1350,6 +1471,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
   end
 
   it "prints a narrow final upgrade summary" do
+    allow(Homebrew).to receive(:messages).and_return(Messages.new)
     cmd = described_class.new([])
     summary = Homebrew::Cmd::UpgradeCmd::FinalUpgradeSummary.new(
       version_changes:       ["testball 0.1 -> 0.2"],
@@ -1361,6 +1483,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     )
 
     allow(cmd).to receive(:final_upgrade_summary).and_return(summary)
+    %w[testball sourceball].each { |name| Homebrew.messages.package_installed(name, 0.0) }
 
     expect { cmd.show_final_upgrade_summary }.to output(<<~EOS).to_stdout
       ==> Upgraded 1 outdated package

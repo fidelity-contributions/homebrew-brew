@@ -490,8 +490,7 @@ module Homebrew
                        prompt: true,
                        action: "installation")
         return if formulae_installer.empty?
-
-        formula_names = formulae_installer.map { |formula_installer| formula_installer.formula.full_name }
+        return if prompt && !formulae_ask_prompt_needed?(formulae_installer, dependants)
 
         install_formulae(formulae_installer, dry_run: true, dry_run_action: dry_run_action(action))
 
@@ -515,11 +514,7 @@ module Homebrew
           verbose:,
         )
 
-        ask_input(action:) if prompt && ask_prompt_needed?(
-          planned_names:   formula_names,
-          requested_names: formula_names,
-          force:           formulae_ask_prompt_needed?(formulae_installer, dependants),
-        )
+        ask_input(action:) if prompt
       end
 
       sig {
@@ -534,7 +529,8 @@ module Homebrew
         return if casks.empty?
 
         cask_names = casks.map(&:full_name)
-        dependency_names = print_dry_run_casks(casks, action: dry_run_action(action), skip_cask_deps:)
+        dependency_names = print_dry_run_casks(casks, action: dry_run_action(action), skip_cask_deps:,
+                                                    only_if_prompt_needed: prompt)
 
         ask_input(action:) if prompt && ask_prompt_needed?(
           planned_names:   cask_names + dependency_names,
@@ -544,19 +540,16 @@ module Homebrew
 
       sig {
         params(
-          casks:             T::Array[Cask::Cask],
-          action:            String,
-          skip_cask_deps:    T::Boolean,
-          include_installed: T::Boolean,
+          casks:                 T::Array[Cask::Cask],
+          action:                String,
+          skip_cask_deps:        T::Boolean,
+          include_installed:     T::Boolean,
+          only_if_prompt_needed: T::Boolean,
         ).returns(T::Array[String])
       }
-      def print_dry_run_casks(casks, action: "install", skip_cask_deps: false, include_installed: true)
-        if (casks_to_print = (include_installed ? casks : casks.reject(&:installed?)).presence)
-          ohai "Would #{action} #{::Utils.pluralize("cask", casks_to_print.count, include_count: true)}:"
-          puts casks_to_print.map(&:full_name).join(" ")
-        end
-
-        casks.flat_map do |cask|
+      def print_dry_run_casks(casks, action: "install", skip_cask_deps: false, include_installed: true,
+                              only_if_prompt_needed: false)
+        dependencies = casks.to_h do |cask|
           dep_names = T.let([], T::Array[String])
           unless skip_cask_deps
             dep_names.concat(
@@ -575,6 +568,20 @@ module Homebrew
                          .map(&:name),
           )
           dep_names.uniq!
+          [cask, dep_names]
+        end
+        cask_names = casks.map(&:full_name)
+        return [] if only_if_prompt_needed && !ask_prompt_needed?(
+          planned_names:   cask_names + dependencies.values.flatten,
+          requested_names: cask_names,
+        )
+
+        if (casks_to_print = (include_installed ? casks : casks.reject(&:installed?)).presence)
+          ohai "Would #{action} #{::Utils.pluralize("cask", casks_to_print.count, include_count: true)}:"
+          puts casks_to_print.map(&:full_name).join(" ")
+        end
+
+        dependencies.flat_map do |cask, dep_names|
           next [] if dep_names.blank?
 
           ohai "Would install #{::Utils.pluralize("dependency", dep_names.count, include_count: true)} " \
