@@ -194,9 +194,10 @@ module Formatter
 
   sig { params(size_in_bytes: T.any(Integer, Float)).returns(String) }
   def self.disk_usage_readable(size_in_bytes)
-    size, unit = disk_usage_readable_size_unit(size_in_bytes)
+    size, unit = disk_usage_readable_size_unit(size_in_bytes, precision: 1)
+    size = size.round(1)
     # avoid trailing zero after decimal point
-    if ((size * 10).to_i % 10).zero?
+    if (size % 1).zero?
       "#{size.to_i}#{unit}"
     else
       "#{format("%<size>.1f", size:)}#{unit}"

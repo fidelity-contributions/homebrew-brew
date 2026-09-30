@@ -164,6 +164,12 @@ RSpec.describe Formatter do
       expect(described_class.disk_usage_readable(4_404_020)).to eq("4.4MB")
       expect(described_class.disk_usage_readable(4_509_715_660)).to eq("4.5GB")
     end
+
+    it "rounds before choosing the unit and dropping a trailing zero" do
+      expect(described_class.disk_usage_readable(1960)).to eq("2KB")
+      expect(described_class.disk_usage_readable(999_950)).to eq("1MB")
+      expect(described_class.disk_usage_readable(999_950_000)).to eq("1GB")
+    end
   end
 
   describe ".number_readable" do
