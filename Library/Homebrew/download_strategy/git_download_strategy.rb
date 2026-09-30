@@ -107,6 +107,18 @@ class GitDownloadStrategy < VCSDownloadStrategy
           env["SSH_AUTH_SOCK"] = socket
         end
       end
+      next if !fetching? || !(token = Homebrew::EnvConfig.github_api_token) || !which("gh", ORIGINAL_PATHS)
+
+      env["PATH"] ||= PATH.new(ENV.fetch("PATH"), ORIGINAL_PATHS).to_s
+      # Resolve rewrites and helpers with the same configuration Git will use.
+      git_options = { env:, chdir: cached_location.directory? ? cached_location : HOMEBREW_CACHE,
+                      print_stderr: false }
+      remote = system_command("git", args: ["ls-remote", "--get-url", "--", url], **git_options)
+      next if !remote.success? || !remote.stdout.start_with?("https://", "http://")
+
+      helpers = system_command("git", args: ["config", "--get-urlmatch", "credential.helper", remote.stdout.chomp],
+                                      **git_options)
+      env["GH_TOKEN"] = token if helpers.success? && helpers.stdout.lines.last&.strip.present?
     end
   end
 
@@ -117,7 +129,7 @@ class GitDownloadStrategy < VCSDownloadStrategy
   sig { returns(T::Hash[String, String]) }
   def local_git_env
     require "utils/git"
-    env.merge(Utils::Git.no_global_config_env)
+    env.except("GH_TOKEN").merge(Utils::Git.no_global_config_env)
   end
 
   sig { override.returns(String) }

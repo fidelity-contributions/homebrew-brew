@@ -130,6 +130,7 @@ RSpec.describe GitDownloadStrategy do
 
     before do
       allow(Sandbox).to receive(:isolate_operation?).and_return(true)
+      ENV.delete("HOMEBREW_GITHUB_API_TOKEN")
       ENV["SSH_AUTH_SOCK"] = "/path/to/agent.sock"
     end
 
@@ -165,7 +166,141 @@ RSpec.describe GitDownloadStrategy do
     end
 
     it "does not restore credentials during local inspection" do
+      ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+
       expect(strategy.env).to eq("GIT_TERMINAL_PROMPT" => "0")
+    end
+  end
+
+  describe "download credentials" do
+    subject(:strategy) do
+      Class.new(described_class) do
+        T.bind(self, T.class_of(GitDownloadStrategy))
+        public :command!, :local_git_env
+      end.new(url, name, version)
+    end
+
+    let(:home) { mktmpdir }
+
+    before do
+      allow(Sandbox).to receive(:isolate_operation?).and_return(true)
+      allow(Dir).to receive(:home).with(ENV.fetch("USER")).and_return(home.to_s)
+      allow(strategy).to receive(:fetching?).and_return(true)
+      allow(strategy).to receive(:command_sandbox).and_wrap_original do |original|
+        original.call.tap do |sandbox|
+          # Exercise environment filtering without nesting the platform sandbox.
+          allow(sandbox).to receive(:sandbox_command) { |args, _tmpdir| args }
+          allow(sandbox).to receive(:apply_before_exec?).and_return(false)
+        end
+      end
+      strategy.quiet!
+    end
+
+    it "can read identities from an SSH agent" do
+      key = home/"id_ed25519"
+      SystemCommand.run!("ssh-keygen", args: ["-q", "-t", "ed25519", "-N", "", "-f", key])
+      ENV["SSH_AUTH_SOCK"] = (home/"agent.sock").to_s
+      agent = Process.spawn("ssh-agent", "-D", "-a", ENV.fetch("SSH_AUTH_SOCK"), out: File::NULL, err: File::NULL)
+      Timeout.timeout(5) { sleep 0.01 until File.socket?(ENV.fetch("SSH_AUTH_SOCK")) }
+      SystemCommand.run!("ssh-add", args: [key], print_stderr: false)
+
+      expect(strategy.command!("ssh-add", args: ["-L"]).stdout).to eq(Pathname("#{key}.pub").read)
+    ensure
+      if agent
+        Process.kill("TERM", agent)
+        Process.wait(agent)
+      end
+    end
+
+    context "with the gh credential helper" do
+      include Test::Helper::Dependencies
+
+      before do
+        ensure_test_dependency!(which("gh", ORIGINAL_PATHS), "gh is required.")
+        %w[GH_TOKEN GITHUB_TOKEN GH_CONFIG_DIR XDG_CONFIG_HOME HOMEBREW_GITHUB_API_TOKEN].each { ENV.delete(it) }
+        ENV["GIT_CONFIG_NOSYSTEM"] = "1"
+        ENV["HOMEBREW_GIT"] = Utils::Git.path
+        ENV["GIT_CONFIG_GLOBAL"] = (home/".gitconfig").to_s
+        (home/".gitconfig").write <<~EOS
+          [credential "https://github.com"]
+            helper =
+            helper = !gh auth git-credential
+        EOS
+        (home/".config/gh").mkpath
+        (home/".config/gh/hosts.yml").write <<~EOS
+          github.com:
+            user: homebrew-test
+            oauth_token: stored-test-token
+            git_protocol: https
+        EOS
+      end
+
+      it "can obtain an existing file-backed gh credential over HTTPS" do
+        expect(strategy.command!("git", args:  ["credential", "fill"],
+                                        input: "url=#{url}\n\n").stdout)
+          .to include("username=homebrew-test\npassword=stored-test-token\n")
+      end
+
+      it "passes the GitHub API token to gh during downloads" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+
+        expect(strategy.command!("git", args:  ["credential", "fill"],
+                                        input: "url=#{url}\n\n").stdout)
+          .to include("username=x-access-token\npassword=download-test-token\n")
+      end
+
+      it "does not pass a token when gh is absent from the original PATH" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+        stub_const("ORIGINAL_PATHS", [])
+
+        expect(strategy.command!(RbConfig.ruby, args: ["-e", "puts ENV.key?('GH_TOKEN')"]).stdout).to eq("false\n")
+      end
+
+      it "does not pass a token without a matching credential helper" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+        (home/".gitconfig").write("[credential \"https://example.com\"]\n  helper = !gh auth git-credential\n")
+
+        expect(strategy.command!(RbConfig.ruby, args: ["-e", "puts ENV.key?('GH_TOKEN')"]).stdout).to eq("false\n")
+      end
+
+      it "does not pass a token after the credential helpers are reset" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+        (home/".gitconfig").open("a") { |file| file.puts "  helper =" }
+
+        expect(strategy.command!(RbConfig.ruby, args: ["-e", "puts ENV.key?('GH_TOKEN')"]).stdout).to eq("false\n")
+      end
+
+      it "finds gh on the original PATH through a wrapper helper after URL rewriting" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+        (home/"credential-wrapper").write("#!/bin/sh\nexec gh auth git-credential \"$@\"\n")
+        (home/"credential-wrapper").chmod(0755)
+        (home/".gitconfig").write <<~EOS
+          [url "https://github.com/"]
+            insteadOf = https://example.com/
+          [credential "https://github.com"]
+            helper = #{home}/credential-wrapper
+        EOS
+        ENV["PATH"] = "/usr/bin:/bin"
+        allow(Sandbox).to receive(:isolate_operation?).and_return(false)
+        allow(strategy).to receive_messages(url: "https://example.com/homebrew/foo", command_sandbox: nil)
+
+        expect(strategy.command!("git", args: ["credential", "fill"], input: "url=#{url}\n\n").stdout)
+          .to include("username=x-access-token\npassword=download-test-token\n")
+      end
+
+      it "does not pass the download token to local Git inspection during a fetch" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "download-test-token"
+
+        expect(strategy.local_git_env).not_to have_key("GH_TOKEN")
+      end
+
+      it "keeps unrelated tokens out of download commands" do
+        ENV["HOMEBREW_GITHUB_API_TOKEN"] = "api-test-token"
+        ENV["HOMEBREW_UNRELATED_TOKEN"] = "unrelated-test-token"
+
+        expect(strategy.command!(RbConfig.ruby, args: ["-e", "puts ENV.keys.grep(/TOKEN/).sort"]).stdout)
+          .to eq("GH_TOKEN\n")
+      end
     end
   end
 
