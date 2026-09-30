@@ -68,7 +68,7 @@ RSpec.describe GitDownloadStrategy do
       end).to contain_exactly((home/".aws").to_s, (home/".npmrc").to_s)
     end
 
-    context "with a login keychain", :needs_macos do
+    context "with a login keychain" do
       let(:keychain) { home/"Library/Keychains/login.keychain-db" }
 
       before do
@@ -77,25 +77,20 @@ RSpec.describe GitDownloadStrategy do
         FileUtils.touch keychain.dirname/"metadata.keychain-db"
       end
 
-      it "allows only the login keychain file for HTTPS downloads" do
-        keychains = keychain.dirname.realpath.to_s
+      test_each(%w[http://git.example.com/repo.git https://git.example.com/repo.git
+                   git@git.example.com:repo.git git://git.example.com/repo.git file:///repo.git]) do |git_url|
+        context "with #{git_url}" do
+          let(:url) { git_url }
 
-        expect(strategy.command_sandbox.profile.rules.filter_map do |rule|
-          next if rule.operation != "file-read*" || !rule.filter&.path&.start_with?(keychains)
+          it "denies keychain reads throughout the fetch" do
+            keychains = keychain.dirname.realpath.to_s
 
-          [rule.allow, rule.filter&.path, rule.filter&.type]
-        end).to eq([
-          [false, keychains, :subpath],
-          [true, keychain.realpath.to_s, :literal],
-        ])
-      end
+            expect(strategy.command_sandbox.profile.rules.filter_map do |rule|
+              next if rule.operation != "file-read*" || !rule.filter&.path&.start_with?(keychains)
 
-      context "with an SSH URL" do
-        let(:url) { "git@git.example.com:repo.git" }
-
-        it "does not allow the login keychain" do
-          expect(strategy.command_sandbox.profile.rules.select(&:allow).map { |rule| rule.filter&.path })
-            .not_to include(keychain.realpath.to_s)
+              [rule.allow, rule.filter&.path, rule.filter&.type]
+            end).to eq([[false, keychains, :subpath]])
+          end
         end
       end
     end

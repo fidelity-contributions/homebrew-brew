@@ -85,14 +85,6 @@ module OS
         allow_write path: "^/private/var/folders/[^/]+/[^/]+/T/xcrun_db(-[^/]+)?$", type: :regex
       end
 
-      # Keychain-backed Git credential helpers (e.g. `git-credential-osxkeychain`,
-      # `gh auth git-credential`) read the login keychain.
-      sig { void }
-      def allow_read_git_credential_store
-        keychain = Pathname(Dir.home(ENV.fetch("USER")))/"Library/Keychains/login.keychain-db"
-        allow_read(path: keychain.realpath) if keychain.file?
-      end
-
       module ClassMethods
         extend T::Helpers
 

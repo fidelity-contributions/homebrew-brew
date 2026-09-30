@@ -91,8 +91,6 @@ class GitDownloadStrategy < VCSDownloadStrategy
   def allow_fetch_credentials(sandbox)
     # Let Git and SSH resolve configuration, includes, URL rewrites and agent sockets.
     sandbox.allow_network(path: "/", type: :subpath)
-    # Credential helpers are only used for HTTP(S) remotes.
-    sandbox.allow_read_git_credential_store if @url.match?(%r{^https?://})
   end
 
   # Read user Git config so credential helpers work for private downloads,
