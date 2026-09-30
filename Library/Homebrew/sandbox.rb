@@ -685,7 +685,7 @@ class Sandbox
 
       command = SystemCommand.new(sandbox_executable, args: sandbox_args, env:, input:, must_succeed:,
                                   print_stdout:, print_stderr:,
-                                  debug:, verbose:, secrets:, chdir:, timeout:)
+                                  debug:, verbose:, secrets:, chdir: chdir || tmpdir, timeout:)
       command.sandbox = self if apply_before_exec?
       File.open(__FILE__) do |inheritance|
         command.sandbox_inheritance = inheritance
