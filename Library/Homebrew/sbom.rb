@@ -130,7 +130,7 @@ class SBOM
   }
   def self.bottle_package(formula_full_name, formula_name, version, tar_gz_sha256, root_url:, license:, created_date:)
     {
-      "SPDXID"           => "SPDXRef-Bottle-#{formula_name}",
+      "SPDXID"           => spdx_id("Bottle-#{formula_name}"),
       "name"             => formula_name,
       "versionInfo"      => version.to_s,
       "filesAnalyzed"    => false,
@@ -156,6 +156,12 @@ class SBOM
     }
   end
   private_class_method :bottle_package
+
+  # Returns an SPDX identifier, escaping punctuation and the dot escape delimiter.
+  sig { params(id: String).returns(String) }
+  def self.spdx_id(id)
+    "SPDXRef-#{id.gsub(/[^a-zA-Z0-9-]/) { |character| ".#{character.unpack1("H*")}." }}"
+  end
 
   sig { params(full_name: String, version: T.nilable(T.any(String, Version))).returns(String) }
   def self.brew_purl(full_name, version)
@@ -283,7 +289,7 @@ class SBOM
       relationships << {
         spdxElementId:      "SPDXRef-Compiler",
         relationshipType:   "BUILD_TOOL_OF",
-        relatedSpdxElement: "SPDXRef-Archive-#{name}-src",
+        relatedSpdxElement: SBOM.spdx_id("Archive-#{name}-src"),
       }
     end
 
@@ -339,6 +345,13 @@ class SBOM
 
     document_describes = supplement["documentDescribes"]
     relationships = supplement["relationships"]
+    # Bottles may be uploaded by a newer brew than the one that built them.
+    legacy_bottle_id = "SPDXRef-Bottle-#{bottle_package.fetch("name")}"
+    if relationships.is_a?(Array) && relationships.any? do |relationship|
+         relationship.is_a?(Hash) && relationship["relatedSpdxElement"] == legacy_bottle_id
+       end
+      bottle_package = bottle_package.merge("SPDXID" => legacy_bottle_id)
+    end
     document_describes += [bottle_package.fetch("SPDXID")] if document_describes.is_a?(Array)
     {
       "documentDescribes" => document_describes.is_a?(Array) ? document_describes : [],
@@ -447,9 +460,9 @@ class SBOM
       next unless patch.is_a?(ExternalPatch)
 
       {
-        spdxElementId:      "SPDXRef-Patch-#{name}-#{index}",
+        spdxElementId:      SBOM.spdx_id("Patch-#{name}-#{index}"),
         relationshipType:   "PATCH_APPLIED",
-        relatedSpdxElement: "SPDXRef-Archive-#{name}-src",
+        relatedSpdxElement: SBOM.spdx_id("Archive-#{name}-src"),
       }
     end
 
@@ -457,9 +470,9 @@ class SBOM
 
     if source.checksum.present?
       base << {
-        spdxElementId:      "SPDXRef-File-#{name}",
+        spdxElementId:      SBOM.spdx_id("File-#{name}"),
         relationshipType:   "PACKAGE_OF",
-        relatedSpdxElement: "SPDXRef-Archive-#{name}-src",
+        relatedSpdxElement: SBOM.spdx_id("Archive-#{name}-src"),
       }
     end
 
@@ -467,7 +480,7 @@ class SBOM
       base << {
         spdxElementId:      "SPDXRef-Compiler",
         relationshipType:   "BUILD_TOOL_OF",
-        relatedSpdxElement: "SPDXRef-Archive-#{name}-src",
+        relatedSpdxElement: SBOM.spdx_id("Archive-#{name}-src"),
       }
 
       if compiler_declaration["SPDXRef-Stdlib"].present?
@@ -495,7 +508,7 @@ class SBOM
        (bottle_info = get_bottle_info(source.bottle)) &&
        (stable_version = source.version)
       bottle << {
-        SPDXID:           "SPDXRef-Bottle-#{name}",
+        SPDXID:           bottle_spdx_id,
         name:             name.to_s,
         versionInfo:      stable_version.to_s,
         filesAnalyzed:    false,
@@ -524,7 +537,7 @@ class SBOM
       next unless patch.is_a?(ExternalPatch)
 
       package = {
-        SPDXID:           "SPDXRef-Patch-#{name}-#{index}",
+        SPDXID:           SBOM.spdx_id("Patch-#{name}-#{index}"),
         name:             "#{name} patch #{index}",
         filesAnalyzed:    false,
         licenseDeclared:  assert_value(nil),
@@ -534,7 +547,7 @@ class SBOM
         checksums:        [],
         externalRefs:     [],
       }
-      if (checksum = patch.resource.checksum)
+      if (checksum = patch.resource.checksum.presence)
         package[:checksums] = [
           {
             algorithm:     "SHA256",
@@ -565,7 +578,7 @@ class SBOM
 
     [
       {
-        SPDXID:           "SPDXRef-Archive-#{name}-src",
+        SPDXID:           SBOM.spdx_id("Archive-#{name}-src"),
         name:             name.to_s,
         versionInfo:      spec_version.to_s,
         filesAnalyzed:    false,
@@ -575,24 +588,21 @@ class SBOM
         downloadLocation: source.url,
         copyrightText:    assert_value(nil),
         externalRefs:     external_refs,
-        checksums:        [
-          {
-            algorithm:     "SHA256",
-            checksumValue: source.checksum.to_s,
-          },
-        ],
+        checksums:        source.checksum.presence&.then do |checksum|
+          [{ algorithm: "SHA256", checksumValue: checksum.hexdigest }]
+        end || [],
       },
     ] + patches + runtime_dependency_declaration + compiler_declaration.values + bottle
   end
 
   sig { returns(T::Array[SPDXSymbolHash]) }
   def generate_files_json
-    checksum = source.checksum
+    checksum = source.checksum.presence
     return [] unless checksum
 
     [
       {
-        SPDXID:    "SPDXRef-File-#{name}",
+        SPDXID:    SBOM.spdx_id("File-#{name}"),
         fileName:  source.url.to_s.split("/").last.presence || "#{name}-#{spec_version}",
         checksums: [
           {
@@ -627,7 +637,7 @@ class SBOM
       bottle_url = bottle_info["url"] if dependency_pkg_version == dependency_formula_pkg_version
 
       dependency_json = {
-        SPDXID:           "SPDXRef-Package-SPDXRef-#{dependency_name.tr("/", "-")}-#{dependency_pkg_version}",
+        SPDXID:           SBOM.spdx_id("Package-SPDXRef-#{dependency_name}-#{dependency_pkg_version}"),
         name:             dependency_name,
         versionInfo:      dependency_pkg_version,
         filesAnalyzed:    false,
@@ -676,13 +686,13 @@ class SBOM
     if bottle_package?(bottling:)
       bottle_spdx_id
     else
-      "SPDXRef-Archive-#{name}-src"
+      SBOM.spdx_id("Archive-#{name}-src")
     end
   end
 
   sig { returns(String) }
   def bottle_spdx_id
-    "SPDXRef-Bottle-#{name}"
+    SBOM.spdx_id("Bottle-#{name}")
   end
 
   sig { returns(Symbol) }
