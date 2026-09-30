@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "sbom"
+require "json_schemer"
 
 RSpec.describe SBOM do
   describe "#schema_validation_errors" do
@@ -19,6 +20,43 @@ RSpec.describe SBOM do
 
     it "returns true if valid" do
       expect(sbom.schema_validation_errors).to be_empty
+    end
+
+    it "omits unavailable source checksums" do
+      expect(sbom.to_spdx_sbom[:packages]).to include(hash_including(name: f.name, checksums: []))
+    end
+
+    context "with an empty source checksum" do
+      let(:f) do
+        formula do
+          T.bind(self, T.class_of(Formula))
+          url "foo-1.0"
+          sha256 ""
+        end
+      end
+
+      it "generates a valid SBOM" do
+        expect(sbom.schema_validation_errors).to be_empty
+      end
+    end
+
+    context "with an empty patch checksum" do
+      let(:f) do
+        formula do
+          T.bind(self, T.class_of(Formula))
+          url "foo-1.0"
+          sha256 TEST_SHA256
+
+          patch do
+            url "patch_macos"
+            sha256 ""
+          end
+        end
+      end
+
+      it "generates a valid SBOM" do
+        expect(sbom.schema_validation_errors).to be_empty
+      end
     end
 
     context "with a maximal SBOM" do
@@ -90,6 +128,59 @@ RSpec.describe SBOM do
         expect(sbom.schema_validation_errors).to be_empty
       end
 
+      context "with punctuation in names and a revised dependency" do
+        before do
+          allow(f).to receive(:name).and_return("gcc@13+foo_bar.40.baz")
+          allow(tab).to receive(:runtime_dependencies).and_return([
+            { "full_name" => "beanstalkd", "pkg_version" => "1.1_1" },
+          ])
+        end
+
+        it "generates a valid source-install SBOM" do
+          expect(sbom.schema_validation_errors).to be_empty
+        end
+
+        it "preserves names and versions in package metadata" do
+          expect(sbom.to_spdx_sbom[:packages]).to include(
+            hash_including(name: "gcc@13+foo_bar.40.baz", versionInfo: "0.1"),
+            hash_including(name: "beanstalkd", versionInfo: "1.1_1"),
+          )
+        end
+
+        it "merges a valid bottle supplement with resolvable relationships" do
+          spdxfile = mktmpdir/SBOM::FILENAME
+          spdxfile.write(JSON.pretty_generate(sbom.to_spdx_sbom(bottling: true)))
+          annotation = described_class.github_packages_sbom_supplement_annotation(
+            sbom.to_spdx_supplement,
+            formula_full_name: f.full_name,
+            formula_name:      f.name,
+            version:           f.version,
+            tar_gz_sha256:     TEST_SHA256,
+            root_url:          "https://ghcr.io/v2/homebrew/core",
+            license:           "MIT",
+            created_date:      "2026-05-10T00:00:00Z",
+          )
+          raise "missing annotation" if annotation.nil?
+
+          described_class.update_pour_metadata(spdxfile, homebrew_version: "1.2.3", time: 1_720_189_863,
+                                                        supplement: JSON.parse(annotation))
+          spdx = JSON.parse(spdxfile.read)
+          spdx_ids = Set.new([spdx.fetch("SPDXID")] +
+                             spdx.fetch("packages").map { |package| package.fetch("SPDXID") } +
+                             spdx.fetch("files").map { |file| file.fetch("SPDXID") })
+
+          expect(
+            validation_errors: JSONSchemer.schema(described_class.schema).validate(spdx).map do |error|
+              error.fetch("error")
+            end,
+            unresolved_ids:    spdx.fetch("relationships").flat_map do |relation|
+              [relation.fetch("spdxElementId"), relation.fetch("relatedSpdxElement")]
+              .reject { |spdx_id| spdx_ids.include?(spdx_id) }
+            end,
+          ).to eq(validation_errors: [], unresolved_ids: [])
+        end
+      end
+
       it "only emits relationships with defined SPDX IDs" do
         spdx = sbom.to_spdx_sbom
         spdx_ids = Set.new(["SPDXRef-DOCUMENT"] + spdx[:packages].map { |package| package[:SPDXID] } +
@@ -105,7 +196,7 @@ RSpec.describe SBOM do
 
         expect(spdx[:packages]).to include(
           hash_including(
-            SPDXID:           "SPDXRef-Patch-formula_name-0",
+            SPDXID:           "SPDXRef-Patch-formula.5f.name-0",
             downloadLocation: "patch_macos",
             checksums:        [{ algorithm: "SHA256", checksumValue: TEST_SHA256 }],
           ),
@@ -122,7 +213,7 @@ RSpec.describe SBOM do
       it "emits bottle metadata when bottle filenames are available" do
         expect(sbom.to_spdx_sbom[:packages]).to include(
           hash_including(
-            SPDXID:           "SPDXRef-Bottle-formula_name",
+            SPDXID:           "SPDXRef-Bottle-formula.5f.name",
             downloadLocation: "https://brew.sh/bottles/formula_name-0.1.all.bottle.tar.gz",
             checksums:        [{
               algorithm:     "SHA256",
@@ -135,7 +226,7 @@ RSpec.describe SBOM do
       it "emits pkg:brew purl in externalRefs for source archive package" do
         expect(sbom.to_spdx_sbom[:packages]).to include(
           hash_including(
-            SPDXID:       "SPDXRef-Archive-formula_name-src",
+            SPDXID:       "SPDXRef-Archive-formula.5f.name-src",
             externalRefs: [{
               referenceCategory: "PACKAGE-MANAGER",
               referenceLocator:  "pkg:brew/homebrew/core/formula_name@0.1",
@@ -165,7 +256,7 @@ RSpec.describe SBOM do
         it "emits both pkg:brew and upstream purl in externalRefs for source archive package" do
           expect(sbom.to_spdx_sbom[:packages]).to include(
             hash_including(
-              SPDXID:       "SPDXRef-Archive-formula_name-src",
+              SPDXID:       "SPDXRef-Archive-formula.5f.name-src",
               externalRefs: [{
                 referenceCategory: "PACKAGE-MANAGER",
                 referenceLocator:  "pkg:brew/homebrew/core/formula_name@2.25.1",
@@ -185,14 +276,14 @@ RSpec.describe SBOM do
         package_ids = spdx[:packages].map { |package| package[:SPDXID] }
 
         expect(package_ids).to contain_exactly(
-          "SPDXRef-Archive-formula_name-src",
-          "SPDXRef-Patch-formula_name-0",
+          "SPDXRef-Archive-formula.5f.name-src",
+          "SPDXRef-Patch-formula.5f.name-0",
         )
         expect(spdx[:relationships].flat_map do |relation|
           [relation[:spdxElementId], relation[:relatedSpdxElement]]
         end).to all(
           satisfy do |spdx_id|
-            package_ids.include?(spdx_id) || spdx_id == "SPDXRef-File-formula_name"
+            package_ids.include?(spdx_id) || spdx_id == "SPDXRef-File-formula.5f.name"
           end,
         )
       end
@@ -203,12 +294,12 @@ RSpec.describe SBOM do
         expect(package_ids).to include(
           "SPDXRef-Compiler",
           "SPDXRef-Stdlib",
-          "SPDXRef-Package-SPDXRef-beanstalkd-1.1",
-          "SPDXRef-Package-SPDXRef-zlib-1.1",
+          "SPDXRef-Package-SPDXRef-beanstalkd-1.2e.1",
+          "SPDXRef-Package-SPDXRef-zlib-1.2e.1",
         )
         expect(package_ids).not_to include(
-          "SPDXRef-Archive-formula_name-src",
-          "SPDXRef-Patch-formula_name-0",
+          "SPDXRef-Archive-formula.5f.name-src",
+          "SPDXRef-Patch-formula.5f.name-0",
         )
       end
 
@@ -231,7 +322,7 @@ RSpec.describe SBOM do
 
         supplement = JSON.parse(annotation)
         bottle_package = supplement.fetch("packages").find do |package|
-          package.fetch("SPDXID") == "SPDXRef-Bottle-formula_name"
+          package.fetch("SPDXID") == "SPDXRef-Bottle-formula.5f.name"
         end
 
         expect(bottle_package).to include(
@@ -308,6 +399,71 @@ RSpec.describe SBOM do
       it "returns false" do
         expect(sbom.schema_validation_errors).not_to be_empty
       end
+    end
+  end
+
+  describe ".github_packages_sbom_supplement_annotation" do
+    test_each([false, true]) do |tagged|
+      it "preserves the bottle IDs referenced by stored supplements (tagged: #{tagged})" do
+        bottle_ids = %w[SPDXRef-Bottle-openssl@3 SPDXRef-Bottle-openssl.40.3]
+        supplements = bottle_ids.map do |bottle_id|
+          {
+            "documentDescribes" => ["SPDXRef-Stdlib"],
+            "packages"          => [{ "SPDXID" => "SPDXRef-Stdlib" }],
+            "relationships"     => [{
+              "spdxElementId"      => "SPDXRef-Stdlib",
+              "relationshipType"   => "DEPENDENCY_OF",
+              "relatedSpdxElement" => bottle_id,
+            }],
+          }
+        end
+        supplement = if tagged
+          { "tags" => { "arm64_tahoe" => supplements.fetch(0), "sonoma" => supplements.fetch(1) } }
+        else
+          supplements.fetch(0)
+        end
+        annotation = described_class.github_packages_sbom_supplement_annotation(
+          supplement,
+          formula_full_name: "openssl@3",
+          formula_name:      "openssl@3",
+          version:           Version.new("3.5.0"),
+          tar_gz_sha256:     TEST_SHA256,
+          root_url:          "https://ghcr.io/v2/homebrew/core",
+          license:           "Apache-2.0",
+          created_date:      "2026-09-29T00:00:00Z",
+        )
+        raise "missing annotation" if annotation.nil?
+
+        parsed = JSON.parse(annotation)
+        results = tagged ? parsed.fetch("tags").values : [parsed]
+
+        expect(results.map do |result|
+          [result.fetch("packages").last.fetch("SPDXID"),
+           result.fetch("documentDescribes").last,
+           result.fetch("relationships").first.fetch("relatedSpdxElement")]
+        end).to eq(bottle_ids.first(tagged ? 2 : 1).map { |id| [id, id, id] })
+      end
+    end
+  end
+
+  describe ".spdx_id" do
+    it "escapes punctuation using SPDX identifier characters" do
+      expect(%w[foo gcc@13 gtk+ foo_bar foo.40.bar foo/bar].map do |name|
+        described_class.spdx_id("Archive-#{name}-src")
+      end).to eq(%w[
+        SPDXRef-Archive-foo-src
+        SPDXRef-Archive-gcc.40.13-src
+        SPDXRef-Archive-gtk.2b.-src
+        SPDXRef-Archive-foo.5f.bar-src
+        SPDXRef-Archive-foo.2e.40.2e.bar-src
+        SPDXRef-Archive-foo.2f.bar-src
+      ])
+    end
+
+    it "keeps names and literal escape sequences distinct" do
+      names = %w[gcc@13 gcc.40.13 gcc-13 foo_bar foo.5f.bar gtk+ gtk.2b. foo/bar foo-bar]
+
+      expect(names.map { |name| described_class.spdx_id("Archive-#{name}-src") }.uniq.length).to eq(names.length)
     end
   end
 
