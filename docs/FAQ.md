@@ -79,6 +79,30 @@ Homebrew doesn't support arbitrary mixing and matching of formula versions, so e
 
 Which is usually: `~/Library/Caches/Homebrew`
 
+## How do I authenticate private Git source downloads?
+
+Prefer HTTPS source URLs and the `gh` credential helper for GitHub.
+[GitHub recommends `gh` for HTTPS authentication](https://docs.github.com/en/get-started/git-basics/caching-your-github-credentials-in-git).
+Homebrew uses your configured Git helpers and passes `HOMEBREW_GITHUB_API_TOKEN` as `GH_TOKEN` during downloads only when `gh` is on your original `PATH` and a helper is configured for the download URL:
+
+```sh
+HOMEBREW_GITHUB_API_TOKEN="$HOMEBREW_MY_TOKEN" brew fetch user/tap/formula
+```
+
+Restrict the token to the required repositories: download subprocesses receive it, but local Git inspections, builds and tests do not.
+Homebrew also supports SSH through an agent. Before downloading, check that the required key is listed, or load it:
+
+```sh
+ssh-add -l
+ssh-add ~/.ssh/id_ed25519 # If the required key is missing.
+```
+
+The following do not work for sandboxed Git downloads:
+
+* Helpers that read the macOS login keychain: the sandbox blocks keychain access to protect unrelated credentials.
+* Bare `GH_TOKEN` or arbitrary token variables: Homebrew filters the environment to limit credential exposure; select the token through `HOMEBREW_GITHUB_API_TOKEN` instead.
+* Interactive password or key-passphrase prompts: Homebrew disables them to prevent unattended downloads from hanging.
+
 ## My macOS `.app`s don’t find Homebrew utilities
 
 GUI apps on macOS don't have Homebrew's prefix in their `PATH` by default. You can fix this by running `sudo launchctl config user path "$(brew --prefix)/bin:${PATH}"` and then rebooting, as documented in `man launchctl`. Note that this sets the `launchctl` `PATH` for *all users*.
