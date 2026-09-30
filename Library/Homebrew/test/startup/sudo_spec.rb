@@ -9,9 +9,8 @@ RSpec.describe "sudo detection" do # rubocop:disable RSpec/DescribeClass
   let(:sudo_log) { sudo.dirname/"calls" }
   let(:unavailable) do
     _, _, status = Open3.capture3("/bin/bash", "-c", <<~SH, "--", sudo.to_s)
-      SUDO="$1"
-      #{(HOMEBREW_LIBRARY_PATH/"brew.sh").read.split("# Ruby honours this result").fetch(1)
-                                          .split("# Remove internal variables").fetch(0).lines.drop(1).join}
+      source "#{HOMEBREW_LIBRARY_PATH}/utils/sudo.sh"
+      homebrew-sudo-available "$1"
       [[ -n "$HOMEBREW_NO_SUDO" ]]
     SH
     status.success?
@@ -19,6 +18,7 @@ RSpec.describe "sudo detection" do # rubocop:disable RSpec/DescribeClass
 
   before do
     ENV.delete("HOMEBREW_NO_SUDO")
+    ENV.delete("HOMEBREW_SUDO_CHECKED")
     sudo.write <<~SH
       #!/bin/bash
       printf '%s\n' "$*" >> "#{sudo_log}"
@@ -31,6 +31,17 @@ RSpec.describe "sudo detection" do # rubocop:disable RSpec/DescribeClass
       exit "${SUDO_TEST_STATUS:-1}"
     SH
     sudo.chmod(0755)
+  end
+
+  it "does not probe sudo during startup" do
+    Open3.capture3("/bin/bash", "-c", <<~SH)
+      /usr/bin/sudo() { "#{sudo}" "$@"; }
+      command() { echo "#{sudo}"; }
+      #{(HOMEBREW_LIBRARY_PATH/"brew.sh").read.split("# Use this configuration file").fetch(1)
+                                          .split("# Remove internal variables").fetch(0).lines.drop(1).join}
+    SH
+
+    expect(sudo_log).not_to exist
   end
 
   it "honours the explicit setting without probing sudo" do
@@ -98,5 +109,15 @@ RSpec.describe "sudo detection" do # rubocop:disable RSpec/DescribeClass
 
     expect([unavailable, sudo_log.read.lines(chomp: true)])
       .to eq([false, ["--reset-timestamp", "-n -k -l"]])
+  end
+
+  it "checks sudo access only once" do
+    Open3.capture3("/bin/bash", "-c", <<~SH, "--", sudo.to_s)
+      source "#{HOMEBREW_LIBRARY_PATH}/utils/sudo.sh"
+      homebrew-sudo-available "$1"
+      homebrew-sudo-available "$1"
+    SH
+
+    expect(sudo_log.read.lines(chomp: true)).to eq(["--reset-timestamp", "-n -k -l"])
   end
 end

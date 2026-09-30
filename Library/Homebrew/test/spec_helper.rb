@@ -233,6 +233,7 @@ RSpec.configure do |config|
   end
 
   config.before do
+    ENV["HOMEBREW_SUDO_CHECKED"] = "1"
     allow(Utils).to receive(:sleep)
     allow(DevelopmentTools).to receive_messages(needs_build_formulae?: false, needs_libc_formula?: false)
     # Worker boundaries are exercised separately in sandbox_operation_spec.rb.

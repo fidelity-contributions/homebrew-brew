@@ -61,7 +61,10 @@ homebrew-as-user() {
   local user_command=()
   if [[ "${command_name}" == as-console-user && -z "${HOMEBREW_NO_SUDO:-}" ]] || [[ "$(id -un)" != "${selected_user}" ]]
   then
-    if [[ -z "${HOMEBREW_NO_SUDO:-}" ]]
+    # `HOMEBREW_LIBRARY` is set by brew.sh, so ShellCheck cannot follow it.
+    # shellcheck disable=SC1091
+    source "${HOMEBREW_LIBRARY}/Homebrew/utils/sudo.sh"
+    if homebrew-sudo-available
     then
       user_command=(sudo -H -u "${selected_user}")
     elif [[ "$(id -u)" != 0 ]]

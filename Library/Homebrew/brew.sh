@@ -650,53 +650,6 @@ else
   export HOMEBREW_GITHUB_PACKAGES_AUTH="Bearer QQ=="
 fi
 
-# Avoid picking up any random `sudo` in `PATH`.
-if [[ -x /usr/bin/sudo ]]
-then
-  SUDO=/usr/bin/sudo
-else
-  # Do this after ensuring we're using default Bash builtins.
-  SUDO="$(command -v sudo 2>/dev/null)"
-fi
-
-# Keep detection in sync with Homebrew/install's install.sh.
-# Ruby honours this result in SystemCommand#sudo_prefix in system_command.rb.
-if [[ -z "${HOMEBREW_NO_SUDO:-}" ]]
-then
-  if [[ ! -x "${SUDO}" ]]
-  then
-    export HOMEBREW_NO_SUDO=1
-  # Reset sudo timestamp to avoid running unauthorized sudo commands.
-  elif ! SUDO_OUTPUT="$(LC_ALL=C "${SUDO}" --reset-timestamp 2>&1)"
-  then
-    case "${SUDO_OUTPUT}" in
-      *'The "no new privileges" flag is set'* | \
-        *"effective uid is not 0"* | \
-        *"must be owned by uid 0 and have the setuid bit set"*)
-        export HOMEBREW_NO_SUDO=1
-        ;;
-      *) ;;
-    esac
-  fi
-
-  # Do not update cached credentials while checking privileges.
-  if [[ -z "${HOMEBREW_NO_SUDO:-}" ]] && ! SUDO_OUTPUT="$(LC_ALL=C "${SUDO}" -n -k -l 2>&1)"
-  then
-    # Authentication failures do not establish whether sudo is permitted.
-    case "${SUDO_OUTPUT}" in
-      *'The "no new privileges" flag is set'* | \
-        *"effective uid is not 0"* | \
-        *"must be owned by uid 0 and have the setuid bit set"* | \
-        *" is not in the sudoers file."* | *" is not allowed to run sudo on "* | *" may not run sudo on "*)
-        export HOMEBREW_NO_SUDO=1
-        ;;
-      *) ;;
-    esac
-  fi
-fi
-
-unset SUDO SUDO_OUTPUT
-
 # Remove internal variables
 unset HOMEBREW_INTERNAL_ALLOW_PACKAGES_FROM_PATHS
 

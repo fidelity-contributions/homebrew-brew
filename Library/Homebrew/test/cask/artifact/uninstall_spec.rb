@@ -29,6 +29,16 @@ RSpec.describe Cask::Artifact::Uninstall, :cask do
       end
     end
 
+    it "does not query sudo for unmatched service wildcards" do
+      artifact = described_class.new(Cask::CaskLoader.load(cask_path("with-uninstall-launchctl")),
+                                     launchctl: "unmatched.*")
+      allow(artifact).to receive(:find_launchctl_with_wildcard).and_return([])
+
+      expect(SystemCommand).not_to receive(:sudo_available?)
+
+      artifact.uninstall_phase(command: fake_system_command)
+    end
+
     describe "upgrade/reinstall uninstall directives" do
       context "with-uninstall-quit" do
         let(:cask) { Cask::CaskLoader.load(cask_path("with-uninstall-quit")) }

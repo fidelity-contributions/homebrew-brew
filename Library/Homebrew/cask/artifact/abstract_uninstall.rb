@@ -240,8 +240,6 @@ module Cask
       sig { params(services: String, command: T.class_of(SystemCommand), _kwargs: T.anything).void }
       def uninstall_launchctl(*services, command:, **_kwargs)
         booleans = [false, true]
-        booleans.delete(true) if Homebrew::EnvConfig.no_sudo?
-
         all_services = []
 
         # if launchctl item contains a wildcard, find matching process(es)
@@ -258,6 +256,8 @@ module Cask
         all_services.each do |service|
           ohai "Removing launchctl service #{service}"
           booleans.each do |sudo|
+            next if sudo && !SystemCommand.sudo_available?
+
             _, found, = Homebrew::Services::System.launchctl_find_service(service, sudo:)
             if found
               result = command.run(

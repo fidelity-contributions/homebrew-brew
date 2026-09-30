@@ -350,7 +350,7 @@ module Homebrew
       sig { void }
       def sudo_purge
         return unless ENV["HOMEBREW_BOTTLE_SUDO_PURGE"]
-        return if Homebrew::EnvConfig.no_sudo?
+        return unless SystemCommand.sudo_available?
 
         system "/usr/bin/sudo", "--non-interactive", "/usr/sbin/purge"
       end
