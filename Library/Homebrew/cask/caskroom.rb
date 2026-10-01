@@ -187,10 +187,7 @@ module Cask
 
       SystemCommand.run("mkdir", args: ["-p", path], sudo: nil)
       mode = "g+rwx"
-      if expected_caskroom_group == shared_caskroom_group
-        admin_group = Etc.getgrnam("admin")
-        mode = "go-w" if !admin_group || Process.groups.exclude?(admin_group.gid)
-      end
+      mode = "go-w" if expected_caskroom_group == shared_caskroom_group || expected_caskroom_group.match?(/\A\d+\z/)
       SystemCommand.run("chmod", args: [mode, path], sudo: nil)
       SystemCommand.run("chown", args: [User.current.to_s, path], sudo: nil)
 
@@ -209,7 +206,10 @@ module Cask
 
     sig { params(path: Pathname).returns(T::Boolean) }
     def self.caskroom_group_correct?(path)
-      group = Etc.getgrnam(expected_caskroom_group)
+      group = expected_caskroom_group
+      return path.stat.gid == group.to_i if group.match?(/\A\d+\z/)
+
+      group = Etc.getgrnam(group)
       return false if group.nil?
 
       path.stat.gid == group.gid
@@ -228,7 +228,9 @@ module Cask
         return "admin"
       end
 
-      Etc.getgrgid(Process.egid)&.name || "staff"
+      Etc.getgrgid(Process.egid)&.name || Process.egid.to_s
+    rescue ArgumentError
+      Process.egid.to_s
     end
 
     # Get all installed casks.
