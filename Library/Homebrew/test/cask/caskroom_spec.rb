@@ -9,9 +9,10 @@ RSpec.describe Cask::Caskroom do
   describe ".ensure_caskroom_exists" do
     test_each([
       [true, "staff", false, 0],
-      [true, "staff", true, 0020],
+      [true, "staff", true, 0],
       [true, "admin", true, 0020],
       [true, "brew-users", false, 0020],
+      [true, "12345", false, 0],
       [false, "staff", false, 0020],
     ]) do |(macos, group, admin, group_write)|
       it "sets group write permissions for #{[macos, group, admin]}" do
@@ -110,6 +111,25 @@ RSpec.describe Cask::Caskroom do
       allow(Etc).to receive(:getgrgid).with(Process.egid).and_return(instance_double(Etc::Group, name: "brewer"))
 
       expect(described_class.expected_caskroom_group).to eq("brewer")
+    end
+
+    test_each([false, true]) do |raises|
+      it "uses a safe fallback when the effective group lookup #{raises ? "raises" : "returns nil"}" do
+        ENV["HOMEBREW_NO_SUDO"] = "1"
+        allow(Etc).to receive(:getgrgid).with(Process.egid) { raise ArgumentError if raises }
+
+        expect(described_class.expected_caskroom_group).to eq(OS.linux? ? "root" : Process.egid.to_s)
+      end
+    end
+
+    test_each([12345, 54321]) do |gid|
+      it "checks numeric group ownership for GID #{gid}" do
+        path = Pathname("/tmp/Caskroom")
+        allow(path).to receive(:stat).and_return(instance_double(File::Stat, gid:))
+        allow(described_class).to receive(:expected_caskroom_group).and_return("12345")
+
+        expect(described_class.caskroom_group_correct?(path)).to eq(gid == 12345)
+      end
     end
 
     it "checks the admin group on macOS", :needs_macos do
