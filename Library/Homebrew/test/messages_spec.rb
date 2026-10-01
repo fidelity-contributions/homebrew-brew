@@ -14,6 +14,20 @@ RSpec.describe Messages do
   end
   let(:elapsed_time) { 1.1 }
 
+  describe "Homebrew.messages", order: :defined do
+    it "keeps messages within an example" do
+      Homebrew.messages.record_caveats("foo", "Zsh completions were installed")
+      Homebrew.messages.package_installed("foo", elapsed_time)
+
+      expect(Homebrew.messages.caveats).to eq([{ package: "foo", caveats: "Zsh completions were installed" }])
+    end
+
+    it "does not leak messages from an earlier example" do
+      expect([Homebrew.messages.caveats, Homebrew.messages.package_count, Homebrew.messages.install_times])
+        .to eq([[], 0, []])
+    end
+  end
+
   describe "#record_caveats" do
     it "adds a caveat" do
       expect do

@@ -373,7 +373,6 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
   end
 
   it "does not repeat unchanged summary sections after a short upgrade" do
-    allow(Homebrew).to receive(:messages).and_return(Messages.new)
     cmd = described_class.new([])
     cmd.final_upgrade_summary.pinned_formulae << "pinnedball 1.0 -> 2.0"
     cmd.final_upgrade_summary.deprecated << "pinnedball"
@@ -392,7 +391,6 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
   end
 
   it "repeats unchanged summary sections after two package changes" do
-    allow(Homebrew).to receive(:messages).and_return(Messages.new)
     cmd = described_class.new([])
     cmd.final_upgrade_summary.pinned_formulae << "pinnedball 1.0 -> 2.0"
     cmd.final_upgrade_summary.pinned_casks << "pinned-cask 2.0 -> 3.0"
@@ -416,7 +414,6 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
 
   test_each([0, 1]) do |package_count|
     it "omits upgrade summaries for #{package_count} completed package changes" do
-      allow(Homebrew).to receive(:messages).and_return(Messages.new)
       cmd = described_class.new([])
       cmd.final_upgrade_summary.version_changes.push("testball 0.1 -> 0.2", "secondball 1.0 -> 2.0")
 
@@ -1471,7 +1468,6 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
   end
 
   it "prints a narrow final upgrade summary" do
-    allow(Homebrew).to receive(:messages).and_return(Messages.new)
     cmd = described_class.new([])
     summary = Homebrew::Cmd::UpgradeCmd::FinalUpgradeSummary.new(
       version_changes:       ["testball 0.1 -> 0.2"],

@@ -682,7 +682,6 @@ RSpec.describe Homebrew::Cmd::InstallCmd do
   context "with cask upgrades", :cask do
     test_each([0, 1, 2]) do |package_count|
       it "prints an install upgrade summary only after #{package_count} completed operations" do
-        allow(Homebrew).to receive(:messages).and_return(Messages.new)
         cmd = described_class.new(["--yes", "codex"])
         download_queue = instance_double(Homebrew::DownloadQueue, fetch: nil, shutdown: nil, failed_downloads: [])
         formula = formula("testball_bottle") do
