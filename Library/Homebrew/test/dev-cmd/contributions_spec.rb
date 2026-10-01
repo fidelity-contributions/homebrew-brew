@@ -35,7 +35,10 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "uses the first README mention for Maintainer tenure" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     repository_path = Pathname("/Homebrew/brew")
-    git_log_format = ["%H", "%cs"].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
+    git_log_format = [
+      Homebrew::DevCmd::Contributions::GIT_LOG_COMMIT_HASH_FORMAT,
+      Homebrew::DevCmd::Contributions::GIT_LOG_COMMITTER_DATE_SHORT_FORMAT,
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
     allow(Utils).to receive(:safe_popen_read).and_return("")
     allow(Utils).to receive(:safe_popen_read)
       .with(Utils::Git.git, "-C", repository_path, "log", "quarter-end-ref", "--fixed-strings",
