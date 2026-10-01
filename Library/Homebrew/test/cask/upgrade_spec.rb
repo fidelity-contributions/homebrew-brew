@@ -277,7 +277,7 @@ RSpec.describe Cask::Upgrade, :cask do
           end
 
           described_class.upgrade_casks!(dry_run: true, quiet: true, summary_pinned:, args:)
-          expect(summary_pinned).to include("local-caffeine 1.2.2")
+          expect(summary_pinned).to include("local-caffeine 1.2.2 -> 1.2.3")
         ensure
           local_caffeine.unpin
         end
@@ -292,7 +292,7 @@ RSpec.describe Cask::Upgrade, :cask do
           expect do
             described_class.upgrade_casks!(local_caffeine, dry_run: true, args:)
           end.to not_to_output.to_stdout
-             .and output(/Not upgrading 1 pinned package:.*local-caffeine 1\.2\.2/m).to_stderr
+             .and output(/Not upgrading 1 pinned package:.*local-caffeine 1\.2\.2 -> 1\.2\.3/m).to_stderr
           expect(Homebrew).to be_failed
         ensure
           local_caffeine.unpin

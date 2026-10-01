@@ -45,8 +45,7 @@ module Homebrew
         switch "--ask",
                description: "Ask for confirmation before downloading and installing. " \
                             "Print the same plan as `--dry-run` before prompting. Only prompts if the plan " \
-                            "includes dependencies or dependants; if the requested formulae or casks are the " \
-                            "only things to install, it only prints the plan. The confirmation prompt is " \
+                            "includes dependencies or dependants. The confirmation prompt is " \
                             "skipped without a TTY. This is the default unless `$HOMEBREW_NO_ASK` is set.",
                env:         :ask,
                replacement: "the default behaviour",
@@ -209,7 +208,8 @@ module Homebrew
           args.named.to_formulae_and_casks(warn: false).partition { it.is_a?(Formula) },
           [T::Array[Formula], T::Array[Cask::Cask]],
         )
-        ask = !args.no_ask?
+        ask = !args.no_ask? && !args.dry_run?
+        cask_upgrade_summary = T.let([], T::Array[String])
 
         installed_casks = T.let([], T::Array[Cask::Cask])
         new_casks = T.let([], T::Array[Cask::Cask])
@@ -277,6 +277,7 @@ module Homebrew
         return if formulae.any? && installed_formulae.empty? && casks.empty?
 
         require "install"
+        initial_package_count = Homebrew.messages.package_count
 
         formulae_installer = Install.formula_installers(
           installed_formulae,
@@ -383,12 +384,6 @@ module Homebrew
                                  Homebrew::DownloadQueue)
           shared_download_queue = nil
           begin
-            if !ask && upgrade_casks.any?
-              Cask::Upgrade.show_upgrade_summary(
-                upgrade_casks.map { |cask| "#{cask.full_name} #{cask.installed_version} -> #{cask.version}" },
-              )
-            end
-
             all_formulae_installer = Install.enqueue_formulae(
               (formulae_installer + dependent_formulae_installer).uniq { |fi| fi.formula.full_name },
               download_queue:,
@@ -491,6 +486,7 @@ module Homebrew
                 quiet:                      args.quiet?,
                 skip_prefetch:              true,
                 show_upgrade_summary:       false,
+                summary_upgrades:           cask_upgrade_summary,
                 upgraded_casks:             installed_or_upgraded_casks,
                 prefetched_cask_installers:,
                 args:,
@@ -507,6 +503,9 @@ module Homebrew
           dry_run:       args.dry_run?,
           display_times: args.display_times?,
         )
+        if cask_upgrade_summary.present? && Homebrew.messages.package_count - initial_package_count >= 2
+          Cask::Upgrade.show_upgrade_summary(cask_upgrade_summary, verb: "Upgraded")
+        end
       rescue FormulaUnreadableError, FormulaClassUnavailableError,
              TapFormulaUnreadableError, TapFormulaClassUnavailableError => e
         require "utils/backtrace"

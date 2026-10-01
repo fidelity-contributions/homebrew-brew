@@ -81,23 +81,27 @@ module Cask
 
       pinned_casks = outdated_casks.select(&:pinned?)
       outdated_casks -= pinned_casks
-      summary_pinned&.concat(pinned_casks.map { |cask| "#{cask.full_name} #{cask.installed_version}" })
+      pinned_versions = pinned_casks.map do |cask|
+        "#{cask.full_name} #{cask.installed_version} -> #{cask.version}"
+      end
+      summary_pinned&.concat(pinned_versions)
 
-      if pinned_casks.any? && (!quiet || casks.any?)
+      if pinned_casks.any? && ((!quiet && summary_pinned.nil?) || casks.any?)
         message = "Not upgrading #{pinned_casks.count} pinned #{::Utils.pluralize("package", pinned_casks.count)}:"
         casks.any? ? ofail(message) : opoo(message)
-        $stderr.puts pinned_casks.map { |cask| "#{cask.full_name} #{cask.installed_version}" } * ", " unless quiet
+        $stderr.puts Homebrew::Upgrade.format_upgrade_summary(pinned_versions).join("\n") if
+          !quiet && summary_pinned.nil?
       end
 
       outdated_casks
     end
 
-    sig { params(cask_upgrades: T::Array[String], dry_run: T.nilable(T::Boolean)).void }
-    def self.show_upgrade_summary(cask_upgrades, dry_run: false)
+    sig { params(cask_upgrades: T::Array[String], dry_run: T.nilable(T::Boolean), verb: String).void }
+    def self.show_upgrade_summary(cask_upgrades, dry_run: false, verb: "Upgrading")
       cask_upgrades = cask_upgrades.uniq
       return if cask_upgrades.empty?
 
-      verb = dry_run ? "Would upgrade" : "Upgrading"
+      verb = "Would upgrade" if dry_run
       oh1 "#{verb} #{cask_upgrades.count} outdated #{::Utils.pluralize("package", cask_upgrades.count)}:"
       puts Homebrew::Upgrade.format_upgrade_summary(cask_upgrades).join("\n")
     end
