@@ -934,6 +934,28 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     EOS
   end
 
+  it "deduplicates combined upgrade summaries while preserving package order" do
+    summary = Homebrew::Cmd::UpgradeCmd::FinalUpgradeSummary.new(
+      version_changes:           [
+        "openssl@3 3.6.4 -> 3.6.5",
+        "openssl@4 4.0.2 -> 4.0.3",
+        "openssl@3 3.6.4 -> 3.6.5",
+      ],
+      dependent_version_changes: [
+        "deno 2.7.10 -> 2.7.11",
+        "openssl@3 3.6.4 -> 3.6.5",
+        "deno 2.7.10 -> 2.7.11",
+        "openssl@4 4.0.2 -> 4.0.3",
+      ],
+    )
+
+    expect(summary.all_version_changes).to eq([
+      "openssl@3 3.6.4 -> 3.6.5",
+      "openssl@4 4.0.2 -> 4.0.3",
+      "deno 2.7.10 -> 2.7.11",
+    ])
+  end
+
   it "deduplicates the execution upgrade summary" do
     expect do
       Cask::Upgrade.show_upgrade_summary([
@@ -1187,7 +1209,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     cmd.run
   end
 
-  it "heads the downloads before prefetching them" do
+  it "heads deduplicated downloads before prefetching them" do
     cmd = described_class.new([])
     download_queue = instance_double(Homebrew::DownloadQueue, fetch: nil, failed_downloads: [], shutdown: nil,
                                      print_heading: nil)
@@ -1197,10 +1219,18 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
     allow(cmd).to receive(:upgrade_outdated_formulae!) do |_, dry_run: false, prefetch_only: false,
                                                               prefetch_names: nil, **|
       if dry_run
-        cmd.final_upgrade_summary.version_changes << "deno 2.7.10 -> 2.7.11"
+        cmd.final_upgrade_summary.version_changes.push(
+          "deno 2.7.10 -> 2.7.11",
+          "openssl@3 3.6.4 -> 3.6.5",
+          "openssl@4 4.0.2 -> 4.0.3",
+        )
+        cmd.final_upgrade_summary.dependent_version_changes.push(
+          "openssl@3 3.6.4 -> 3.6.5",
+          "openssl@4 4.0.2 -> 4.0.3",
+        )
       elsif prefetch_only
         sequence << "prefetch"
-        prefetch_names&.replace(["deno"])
+        prefetch_names&.replace(%w[deno openssl@3 openssl@4])
       end
 
       true
@@ -1214,7 +1244,7 @@ RSpec.describe Homebrew::Cmd::UpgradeCmd do
 
     cmd.run
 
-    expect(sequence).to eq(["Fetching downloads for: deno", "prefetch"])
+    expect(sequence).to eq(["Fetching downloads for: deno, openssl@3 and openssl@4", "prefetch"])
   end
 
   it "uses prefetched compatible casks and carries requirement errors into upgrade" do

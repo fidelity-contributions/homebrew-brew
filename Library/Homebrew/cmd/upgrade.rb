@@ -35,7 +35,7 @@ module Homebrew
         prop :source_build_formulae, T::Array[String], default: []
 
         sig { returns(T::Array[String]) }
-        def all_version_changes = version_changes + dependent_version_changes
+        def all_version_changes = version_changes | dependent_version_changes
       end
 
       cmd_args do
