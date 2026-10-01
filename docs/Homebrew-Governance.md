@@ -15,12 +15,16 @@ Homebrew’s governance is grounded in the principle that only active contributo
 - **Maintainer**: Active contributors with commit access to one or more Primary Homebrew repositories (defined below).
 - **Lead Maintainer**: A Maintainer with sustained, long-term impact and leadership within the project with commit access to all Homebrew repositories.
 - **Security Team**: A security-focused subteam of Maintainers and the Project Leader, some of whom may have increased access rights than otherwise needed.
-- **Project Leader (PL)**: A Lead Maintainer elected to serve as Homebrew’s primary public representative and project-wide coordinator.
-- **Quarterly activity criteria**: Around 50 meaningful maintainer contributions or other work considered essential by the Project Leader per quarter to Primary Homebrew repositories to remain in good standing.
+- **Ops Team**: Maintainers responsible for operating Homebrew's infrastructure.
+- **Project Leader (PL)**: A Maintainer elected from the Lead Maintainers to serve as Homebrew’s primary public representative and project-wide coordinator.
+- **Deputy Project Leader (DPL)**: A Maintainer elected from the Lead Maintainers to act as Project Leader when the Project Leader is unavailable.
+- **Quarterly activity criteria**: Around 50 meaningful maintainer contributions per quarter to Primary Homebrew repositories to remain in good standing as a Maintainer.
+  Lead Maintainers have mandatory numerical requirements, defined below.
 - **Quarter**: A Homebrew reporting quarter, defined as one of the following periods: December–February, March–May, June–August, or September–November.
   Quarterly reporting covers the Maintainers listed in Homebrew/brew's README at the end of the quarter.
   The report's `potential new role` column uses preceding full quarterly reports to apply multi-quarter role requirements.
-- **Meaningful maintainer contributions**: Merged pull requests opened or merged by the Maintainer, pull requests created by others that GitHub reports as both reviewed by the Maintainer and approved, or merged co-authored commits in Primary Homebrew repositories.
+  Its recommendations require review against Maintainer discretion, Security and Ops Team exceptions and non-numerical eligibility criteria before role changes are made.
+- **Meaningful maintainer contributions**: Merged pull requests by the Maintainer, pull requests created by others that GitHub reports as both reviewed and approved by the Maintainer, or merged co-authored commits in Primary Homebrew repositories.
   A pull request opened and merged by the same Maintainer counts only once for that Maintainer.
   Review attribution uses GitHub's `review:approved reviewed-by:USERNAME` search as an intentionally ambiguous, 100-result-capped activity proxy, not a precise approval audit.
   Repository-scoped follow-up searches ensure that capped counts do not affect role activity checks.
@@ -35,7 +39,7 @@ Homebrew’s governance is grounded in the principle that only active contributo
 
 **Privileges:**
 
-- Commit/merge access on assigned repositories.
+- Write access on assigned GitHub repositories.
 - Participation in maintainer-only technical discussions and informal decision-making.
 - Voting rights on governance and project direction.
 - May become eligible for Lead Maintainer status through sustained contributions and initiative.
@@ -47,11 +51,16 @@ Homebrew’s governance is grounded in the principle that only active contributo
 
 **Accession:**
 
+- Regular Maintainer status has no in-person meeting requirement.
 - Any Lead Maintainer may nominate for Maintainer any person with positive contribution activity and voting commences immediately.
 - The nominee becomes a Maintainer upon approval by a simple majority vote of Lead Maintainers who respond within 7 days.
 - A Maintainer remains a Maintainer until resignation or removal for inactivity.
 
 **Removal for Inactivity:**
+
+The Project Leader applies this policy after considering other essential work under the quarterly activity criteria.
+Security Team members may be exempt from this Maintainer inactivity policy.
+Ops Team members may also retain Maintainer status if the Project Leader determines that their Ops activity has been substantial, timely and reliable.
 
 - Missing the activity threshold for 1 quarter triggers a private warning.
 - If the Maintainer meets the activity threshold in the following quarter, the warning is cleared and the process resets.
@@ -63,17 +72,16 @@ Homebrew’s governance is grounded in the principle that only active contributo
 ### Lead Maintainer
 
 Lead Maintainers act collectively as Homebrew’s leadership.
-No single person holds special authority beyond the Project Leader role.
 
 **Privileges:**
 
-- Commit/merge access on all repositories.
+- Maintain access on all GitHub repositories.
 - Voting rights on governance and project direction.
 
 **Expectations:**
 
-- Meets the quarterly activity criteria and makes at least 25 meaningful maintainer contributions in each of any two Primary Homebrew repositories per quarter.
-  The two repositories may differ between quarters.
+- Must make at least 50 meaningful maintainer contributions in total and at least 25 in each of any two Primary Homebrew repositories per quarter.
+  These numerical requirements are mandatory for eligibility and retention and cannot be waived or replaced by other work.
 - A higher level of responsibility and responsiveness than standard maintainers e.g. timely pull request review, timely responses in Slack, pulling weight on shared project tasks and not just whatever is personally most interesting.
 
 **Eligibility Criteria:**
@@ -81,7 +89,7 @@ No single person holds special authority beyond the Project Leader role.
 - 3 years tenure of continuous Maintainer status.
 - Has met the Lead Maintainer quarterly activity expectation defined above in all four quarters of the preceding year.
 - Must have attended at least one in-person AGM (or another official Homebrew event) to verify identity and participation within the community.
-  Where this is impossible due to e.g. medical reasons, an in-person verification of government ID from another Lead Maintainer will suffice.
+  As a fallback: must have met at least one other Homebrew Lead Maintainer in person before becoming a Lead Maintainer.
 - Demonstrates initiative beyond personal contributions, including leadership in review, policy, tooling, or infrastructure.
 
 **Accession:**
@@ -97,8 +105,8 @@ No single person holds special authority beyond the Project Leader role.
 
 - Missing the activity threshold for 1 quarter triggers a private warning.
 - Missing the activity threshold for 2 consecutive quarters results in a change of status to Maintainer.
-- Upon demotion, the contributor's inactivity record is not reset. The individual's missed quarters as Lead Maintainer count toward the Maintainer inactivity policy.
-  If the demoted individual has already missed 2 consecutive quarters (as Lead Maintainer and/or Maintainer), they are subject to immediate removal in accordance with the Maintainer policy.
+- Upon demotion, the contributor's Maintainer inactivity record is not reset.
+  Only quarters that also fail the Maintainer activity criteria count towards removal under the Maintainer inactivity policy, subject to its discretion and Security and Ops Team exceptions.
 
 ---
 
@@ -119,6 +127,8 @@ No single person holds special authority beyond the Project Leader role.
 **Term:**
 
 - The Project Leader serves a two-year term.
+- Candidates must be Lead Maintainers at the time of election.
+- Ceasing to be a Maintainer vacates the Project Leader position; ceasing to be a Lead Maintainer does not.
 - If the existing Project Leader is the only Lead Maintainer standing as a candidate, that person remains Project Leader without a vote.
 - If more than one Lead Maintainer stands as a candidate, the Project Leader is chosen by a simple majority of Lead Maintainers who respond within 7 days.
 - If the position is vacant, a new election will be held within 14 days to fill the Project Leader spot for the remainder of the term.
@@ -129,6 +139,26 @@ No single person holds special authority beyond the Project Leader role.
 - The Project Leader may be removed before the end of their term by a ⅔ supermajority vote of all current Lead Maintainers.
 - A removal vote may be initiated by any Lead Maintainer submitting a non-anonymous request to all Lead Maintainers.
 - The removal vote will be conducted among all current Lead Maintainers via a public GitHub pull request or other transparent mechanism.
+
+---
+
+### Deputy Project Leader
+
+**Responsibilities:**
+
+- Acts as Project Leader when the Project Leader is unavailable or the position is vacant, until the Project Leader returns or a successor takes office.
+- While acting as Project Leader, exercises the same responsibilities and decision-making authority, subject to the same limits and review requirements.
+
+**Eligibility:**
+
+- Must be a Lead Maintainer at the time of election and cannot simultaneously hold the Project Leader position.
+
+**Term and removal:**
+
+- The first Deputy Project Leader will be elected at the 2027 AGM for a term ending at the 2029 AGM.
+- Elected every second year for a two-year term, with Project Leader and Deputy Project Leader elections held in alternate years.
+- Ceasing to be a Maintainer vacates the Deputy Project Leader position; ceasing to be a Lead Maintainer does not.
+- Where not otherwise specified, the Project Leader's term and removal rules apply equally to the Deputy Project Leader.
 
 ---
 
@@ -157,11 +187,22 @@ No single person holds special authority beyond the Project Leader role.
 
 ## 4. Security & emergency actions
 
-- The Security Team is comprised of any number of Maintainers appointed by the Project Leader, serving until resignation or removal from the team by the Project Leader.
-- The Project Leader and 2 other Lead Maintainers are granted the necessary technical permissions (e.g. Owner or Admin roles) on all primary Homebrew repositories and infrastructure to immediately revoke access in emergencies.
-  When possible, these 2 Lead Maintainers should be members of the Security Team.
-  If there are not enough eligible Lead Maintainers on the Security Team, the Project Leader will appoint other Lead Maintainers to fulfil this role, with the appointments subject to confirmation by a simple majority vote of all Lead Maintainers.
-- In emergencies (e.g. malicious commits, compromised credentials, abuse of access), any Lead Maintainer may immediately revoke access and must notify all other Lead Maintainers.
+- The Security Team comprises the Project Leader and any number of Maintainers appointed by the Project Leader, serving until resignation or removal from the team by the Project Leader.
+- Before joining the Security or Ops Team or becoming a human GitHub organisation owner, Maintainers must have met a Homebrew Lead Maintainer in person, preferably at an in-person AGM or another official Homebrew event.
+- Security Team members may be exempt from Maintainer numerical contribution requirements and may instead be evaluated by the Project Leader on qualitative security observations, such as their helpfulness to the project's security goals.
+  This exemption does not waive the mandatory numerical requirements for becoming or remaining a Lead Maintainer.
+- Only Security Team members may make Homebrew/brew releases, whether directly or through automation.
+- GitHub organisation owners must include the Project Leader, Deputy Project Leader and at least one other Maintainer, preferably from the Security Team.
+  At least three human owners must be retained, including while an elected position is vacant.
+- Only Security Team members may hold owner or equivalent top-level administrative access to Slack, 1Password or other project services apart from GitHub.
+  Ops Team members may also hold AWS AdministratorAccess; this exception is limited to AWS.
+  Leaving the Security Team requires revocation of release access and any administrative permissions no longer authorised by this policy.
+- Only Security Team members who are GitHub organisation owners may be granted bypass permissions on GitHub repository rules.
+  Maintainer and Lead Maintainer roles do not grant repository Admin or bypass permissions; organisation owners retain their inherited administrative access.
+- GitHub organisation owners are granted the necessary technical permissions on all primary Homebrew repositories to immediately revoke access in emergencies.
+  The Project Leader and at least 2 other Security Team members hold the equivalent emergency permissions for other project infrastructure.
+- In emergencies (e.g. malicious commits, compromised credentials, abuse of access), any Security Team member or Lead Maintainer may immediately revoke access using their existing permissions and must notify all other Lead Maintainers.
+  Where additional permissions are needed, they must request action from a GitHub organisation owner or the Security Team as appropriate.
 - A formal review must occur within 7 days and be published to all Maintainers within 21 days.
 - Restoration or permanent removal is determined by a simple majority vote of Lead Maintainers.
 

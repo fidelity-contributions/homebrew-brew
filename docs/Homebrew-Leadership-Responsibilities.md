@@ -12,6 +12,10 @@ last_review_date: "2025-11-26"
 - each quarter: checking for activity of maintainers and asking them to step down if they have not been active enough in the past quarters
 - organising the AGM (with delegation of tasks to other maintainers)
 
+## Deputy Project Leader responsibilities
+
+- acts as Project Leader when the Project Leader is unavailable or the position is vacant, with the same authority, limits and review requirements described in [Homebrew Governance](Homebrew-Governance.md#deputy-project-leader)
+
 ## Lead Maintainers' sole responsibilities
 
 - decide on technical disputes between Homebrew maintainers and the Project Leader
