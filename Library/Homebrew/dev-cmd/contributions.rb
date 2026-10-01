@@ -33,6 +33,12 @@ module Homebrew
       LEAD_REPOSITORY_ACTIVITY_THRESHOLD = 25
       MAX_CONTRIBUTIONS = T.let(MAINTAINER_ACTIVITY_THRESHOLD * 10, Integer)
       QUALIFYING_CONTRIBUTION_TYPES = [:merged_pr, :approved_pr_review, :coauthor].freeze
+      GIT_LOG_FIELD_SEPARATOR = "\x1f"
+      GIT_LOG_RECORD_SEPARATOR = "\x1e"
+      GIT_LOG_FIELDS = T.let({
+        commit_hash: 0, parent_hashes: 1, author_name: 2, author_email: 3,
+        committer_name: 4, committer_email: 5, commit_message: 6
+      }.freeze, T::Hash[Symbol, Integer])
 
       cmd_args do
         usage_banner "`contributions` [`--user=`] [`--repositories=`] [`--quarter=`] [`--from=`] [`--to=`] " \
@@ -299,16 +305,17 @@ module Homebrew
       def maintainer_since(repository_path, ref, user, name)
         require "utils/git"
 
+        git_log_format = ["%H", "%cs"].join(GIT_LOG_FIELD_SEPARATOR)
         candidates = ["https://github.com/#{user}", name].flat_map do |identity|
           Utils.safe_popen_read(
             Utils::Git.git, "-C", repository_path, "log", ref, "--fixed-strings",
-            "-S#{identity}", "--format=%H%x1f%cs", "--", "README.md"
+            "-S#{identity}", "--format=#{git_log_format}", "--", "README.md"
           ).lines(chomp: true)
         end
         candidates.uniq!
-        candidates.sort_by! { |candidate| candidate.split("\x1f", 2).fetch(1) }
+        candidates.sort_by! { |candidate| candidate.split(GIT_LOG_FIELD_SEPARATOR, 2).fetch(1) }
         candidates.each do |candidate|
-          commit, date = candidate.split("\x1f", 2)
+          commit, date = candidate.split(GIT_LOG_FIELD_SEPARATOR, 2)
           next if date.nil?
 
           readme = Utils.safe_popen_read(Utils::Git.git, "-C", repository_path, "show", "#{commit}:README.md")
@@ -354,11 +361,23 @@ module Homebrew
         git_merged_pull_requests = users.keys.to_h do |user|
           [user, repositories.to_h { |repository| [repository, Set.new] }]
         end
+        commit_hash_format = "%H"
+        parent_hashes_format = "%P"
+        author_name_format = "%an"
+        author_email_format = "%ae"
+        committer_name_format = "%cn"
+        committer_email_format = "%ce"
+        commit_message_format = "%B"
+        git_log_format_fields = [
+          commit_hash_format, parent_hashes_format, author_name_format, author_email_format,
+          committer_name_format, committer_email_format, commit_message_format
+        ]
         repository_refs.each do |repository, (repository_path, ref)|
           require "utils/git"
+          git_log_format = git_log_format_fields.join(GIT_LOG_FIELD_SEPARATOR) + GIT_LOG_RECORD_SEPARATOR
           output = Utils.safe_popen_read(
             Utils::Git.git, "-C", repository_path, "log", ref, "--since=#{from}", "--before=#{to}",
-            "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%cn%x1f%ce%x1f%B%x1e"
+            "--format=#{git_log_format}"
           )
           authored_pull_requests = users.keys.to_h { |user| [user, Set.new] }
           merged_pull_requests = users.keys.to_h { |user| [user, Set.new] }
@@ -571,18 +590,20 @@ module Homebrew
         github_identity_users.each do |identity, user|
           identity_users[identity] ||= user if user
         end
-        records = output.split("\x1e").filter_map do |record|
-          fields = record.strip.split("\x1f", 7)
-          fields if fields.length >= 5
+        records = output.split(GIT_LOG_RECORD_SEPARATOR).filter_map do |record|
+          values = record.strip.split(GIT_LOG_FIELD_SEPARATOR, GIT_LOG_FIELDS.length)
+          next if values.length != GIT_LOG_FIELDS.length
+
+          GIT_LOG_FIELDS.to_h { |field, index| [field, values.fetch(index)] }
         end
         record_identities = records.to_h do |fields|
-          [fields.fetch(0), [fields.fetch(2), fields.fetch(3)]]
+          [fields.fetch(:commit_hash), [fields.fetch(:author_name), fields.fetch(:author_email)]]
         end
 
         # Resolve identities for each commit based on the author and committer information
         records.each do |fields|
-          parents = fields.fetch(1).split
-          source_owner = fields.fetch(fields.length - 1)[%r{\AMerge pull request #\d+ from ([^/\s]+)/}, 1]
+          parents = fields.fetch(:parent_hashes).split
+          source_owner = fields.fetch(:commit_message)[%r{\AMerge pull request #\d+ from ([^/\s]+)/}, 1]
           next if parents.length < 2 || source_owner.nil?
 
           user = identity_users[source_owner.downcase]
@@ -596,18 +617,20 @@ module Homebrew
 
         # Map commit SHAs to their respective authors based on identity resolution
         commit_authors = T.let(records.to_h do |fields|
-          sha = fields.fetch(0)
-          author_name = fields.fetch(2)
-          author_email = fields.fetch(3)
+          sha = fields.fetch(:commit_hash)
+          author_name = fields.fetch(:author_name)
+          author_email = fields.fetch(:author_email)
           [sha, user_for_git_identity(author_name, author_email, identity_users)]
         end, T::Hash[String, T.nilable(String)])
 
         # Coauthor contributions with "Co-authored-by" in body
         records.each do |fields|
-          parents_string = fields.fetch(1)
-          author_name = fields.fetch(2)
-          author_email = fields.fetch(3)
-          body = fields.fetch(fields.length - 1)
+          parents_string = fields.fetch(:parent_hashes)
+          author_name = fields.fetch(:author_name)
+          author_email = fields.fetch(:author_email)
+          committer_name = fields.fetch(:committer_name)
+          committer_email = fields.fetch(:committer_email)
+          body = fields.fetch(:commit_message)
           coauthors = body.scan(/^Co-authored-by:\s*(.*?)\s*<([^>]+)>/i).filter_map do |match|
             next unless match.is_a?(Array)
 
@@ -615,8 +638,8 @@ module Homebrew
           end
 
           # Coauthor information from amended commit fields
-          if [author_name, author_email] != [fields.fetch(4), fields.fetch(5)]
-            coauthor = user_for_git_identity(fields.fetch(4), fields.fetch(5), identity_users)
+          if [author_name, author_email] != [committer_name, committer_email]
+            coauthor = user_for_git_identity(committer_name, committer_email, identity_users)
             coauthors << coauthor if coauthor
           end
 

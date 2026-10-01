@@ -35,11 +35,12 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "uses the first README mention for Maintainer tenure" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     repository_path = Pathname("/Homebrew/brew")
+    git_log_format = ["%H", "%cs"].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
     allow(Utils).to receive(:safe_popen_read).and_return("")
     allow(Utils).to receive(:safe_popen_read)
       .with(Utils::Git.git, "-C", repository_path, "log", "quarter-end-ref", "--fixed-strings",
-            "-SAlice", "--format=%H%x1f%cs", "--", "README.md")
-      .and_return("first-mention\x1f2020-01-02\n")
+            "-SAlice", "--format=#{git_log_format}", "--", "README.md")
+      .and_return("first-mention#{Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR}2020-01-02\n")
     allow(Utils).to receive(:safe_popen_read)
       .with(Utils::Git.git, "-C", repository_path, "show", "first-mention:README.md")
       .and_return("Homebrew was created by Alice.\n")
@@ -565,13 +566,15 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     command = described_class.new(["--user=alice", "--repositories=Homebrew/homebrew-core"])
     repository = "Homebrew/homebrew-core"
     repository_refs = { repository => [Pathname("/Homebrew/homebrew-core"), "origin/HEAD"] }
-    separator = "\x1f"
-    record_separator = "\x1e"
+    separator = Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR
+    record_separator = Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR
     merge = [
-      "merge", "base pull-request", "Alice", "alice@example.com",
+      "merge", "base pull-request", "Alice", "alice@example.com", "Alice", "alice@example.com",
       "Merge pull request #123 from alice/topic"
     ].join(separator)
-    pull_request = ["pull-request", "base", "Alice", "alice@example.com", "Change something"].join(separator)
+    pull_request = [
+      "pull-request", "base", "Alice", "alice@example.com", "Alice", "alice@example.com", "Change something"
+    ].join(separator)
     git_log = "#{merge}#{record_separator}#{pull_request}#{record_separator}"
     allow(Utils).to receive(:safe_popen_read).and_return(git_log)
     allow(GitHub).to receive(:search_approved_pull_requests_in_user_or_organisation).and_return([])
@@ -599,13 +602,16 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     command = described_class.new(["--user=alice", "--repositories=Homebrew/homebrew-core"])
     repository = "Homebrew/homebrew-core"
     repository_refs = { repository => [Pathname("/Homebrew/homebrew-core"), "origin/HEAD"] }
-    separator = "\x1f"
-    record_separator = "\x1e"
+    separator = Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR
+    record_separator = Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR
     merge = [
-      "merge", "base pull-request", "Alice", "alice@example.com",
+      "merge", "base pull-request", "Alice", "alice@example.com", "Alice", "alice@example.com",
       "Merge pull request #123 from Homebrew/topic"
     ].join(separator)
-    pull_request = ["pull-request", "base", "BrewTestBot", "test-bot@example.com", "Change something"].join(separator)
+    pull_request = [
+      "pull-request", "base", "BrewTestBot", "test-bot@example.com", "BrewTestBot", "test-bot@example.com",
+      "Change something"
+    ].join(separator)
     git_log = "#{merge}#{record_separator}#{pull_request}#{record_separator}"
     allow(Utils).to receive(:safe_popen_read).and_return(git_log)
     allow(GitHub).to receive(:search_approved_pull_requests_in_user_or_organisation).and_return([])
@@ -631,25 +637,25 @@ RSpec.describe Homebrew::DevCmd::Contributions do
 
   it "attributes merged PRs once and learns non-Maintainer Git identities" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
-    separator = "\x1f"
-    record_separator = "\x1e"
+    separator = Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR
+    record_separator = Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR
     merge = [
-      "merge", "base pull-request", "Alice Example", "alice@example.com",
+      "merge", "base pull-request", "Alice Example", "alice@example.com", "Alice Example", "alice@example.com",
       "Merge pull request #123 from Homebrew/topic"
     ].join(separator)
     pull_request = [
-      "pull-request", "base", "Bob Example", "bob@example.com",
+      "pull-request", "base", "Bob Example", "bob@example.com", "Bob Example", "bob@example.com",
       "Change something\n\nCo-authored-by: Alice Example <123+alice@users.noreply.github.com>"
     ].join(separator)
     coauthored = [
-      "coauthored", "base", "Someone Else", "someone@example.com",
+      "coauthored", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change another thing\n\nCo-authored-by: Bob Example <bob@example.com>"
     ].join(separator)
 
     counts = command.parse_git_log(
       "#{merge}#{record_separator}#{pull_request}#{record_separator}#{coauthored}#{record_separator}",
       { "alice" => "Alice Example", "bob" => "bob" },
-      github_identities: { "bob" => ["bob", "Bob Example"] },
+      github_identities: { "alice" => ["alice@example.com"], "bob" => ["bob", "Bob Example", "bob@example.com"] },
     )
 
     expect(counts).to eq(
@@ -664,21 +670,22 @@ RSpec.describe Homebrew::DevCmd::Contributions do
 
   it "attributes amended committers as coauthors" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
-    separator = "\x1f"
-    record_separator = "\x1e"
+    separator = Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR
+    record_separator = Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR
     base = ["base", "", "Maintainer", "maintainer@example.com", "Maintainer", "maintainer@example.com", "Base"]
            .join(separator)
     amended = [
-      "amended", "base", "Alice Example", "alice@example.com", "Bob Example", "bob@example.com", "Change something"
+      "amended", "base", "Alice Example", "alice@example.com", "John", "bob@example.com", "Change something"
     ].join(separator)
     merge = [
-      "merge", "base amended", "Alice Example", "alice@example.com", "Alice Example", "alice@example.com",
+      "merge", "base amended", "Alice Example", "alice@example.com", "Joe", "alice@example.com",
       "Merge pull request #123 from Homebrew/topic"
     ].join(separator)
 
     counts = command.parse_git_log(
       "#{merge}#{record_separator}#{amended}#{record_separator}#{base}#{record_separator}",
       { "alice" => "Alice Example", "bob" => "Bob Example" },
+      github_identities: { "alice" => ["alice@example.com"], "bob" => ["bob@example.com"] },
     )
 
     expect(counts.fetch("bob").fetch(:coauthor)).to eq(1)
@@ -688,10 +695,11 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     command = described_class.new(["--user=alice", "--repositories=Homebrew/homebrew-core"])
     repository = "Homebrew/homebrew-core"
     commit = [
-      "commit", "base", "Someone Else", "someone@example.com",
+      "commit", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Alice Example <a.example@example.com>"
-    ].join("\x1f")
-    allow(Utils).to receive(:safe_popen_read).and_return("#{commit}\x1e")
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
+    allow(Utils).to receive(:safe_popen_read)
+      .and_return("#{commit}#{Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR}")
     allow(GitHub::API).to receive(:open_rest)
       .with(GitHub.url_to("users", "alice"))
       .and_return({ "name" => "Alice Example", "email" => "a.example@example.com" })
@@ -714,16 +722,16 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "skips GitHub profile names shared by multiple requested users" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     ambiguous = [
-      "ambiguous", "base", "Someone Else", "someone@example.com",
+      "ambiguous", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Alex <unknown@example.com>"
-    ].join("\x1f")
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
     by_email = [
-      "by-email", "base", "Someone Else", "someone@example.com",
+      "by-email", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change another thing\n\nCo-authored-by: Alex <bob@example.com>"
-    ].join("\x1f")
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
 
     counts = command.parse_git_log(
-      "#{ambiguous}\x1e#{by_email}\x1e",
+      "#{ambiguous}#{Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR}#{by_email}#{Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR}",
       { "alice" => "alice", "bob" => "bob" },
       github_identities: { "alice" => %w[alice Alex alice@example.com], "bob" => %w[bob Alex bob@example.com] },
     )
@@ -734,12 +742,12 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "prefers an exact email match over a GitHub profile name" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     commit = [
-      "commit", "base", "Someone Else", "someone@example.com",
+      "commit", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Alex <bob@example.com>"
-    ].join("\x1f")
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
 
     counts = command.parse_git_log(
-      "#{commit}\x1e",
+      "#{commit}#{Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR}",
       { "alice" => "alice", "bob" => "bob" },
       github_identities: { "alice" => %w[alice Alex alice@example.com], "bob" => %w[bob bob@example.com] },
     )
@@ -750,15 +758,18 @@ RSpec.describe Homebrew::DevCmd::Contributions do
   it "matches GitHub no-reply usernames but not other emails' local parts" do
     command = described_class.new(["--maintainer-report-csv=2026-1"])
     unrelated = [
-      "unrelated", "base", "Someone Else", "someone@example.com",
+      "unrelated", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change something\n\nCo-authored-by: Other Alice <alice@unrelated.example.com>"
-    ].join("\x1f")
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
     noreply = [
-      "noreply", "base", "Someone Else", "someone@example.com",
+      "noreply", "base", "Someone Else", "someone@example.com", "Someone Else", "someone@example.com",
       "Change another thing\n\nCo-authored-by: A. Example <123+alice@users.noreply.github.com>"
-    ].join("\x1f")
+    ].join(Homebrew::DevCmd::Contributions::GIT_LOG_FIELD_SEPARATOR)
 
-    counts = command.parse_git_log("#{unrelated}\x1e#{noreply}\x1e", { "alice" => "Alice Example" })
+    counts = command.parse_git_log(
+      "#{unrelated}#{Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR}#{noreply}#{Homebrew::DevCmd::Contributions::GIT_LOG_RECORD_SEPARATOR}",
+      { "alice" => "Alice Example" },
+    )
 
     expect(counts.fetch("alice").fetch(:coauthor)).to eq(1)
   end
