@@ -138,7 +138,7 @@ We aim to bottle everything.
 Homebrew's default prefix supports its pre-built binary packages (known as [bottles](Bottles.md)) and is used by the installer:
 
 * `/opt/homebrew` for macOS on Apple Silicon,
-* `/usr/local` for macOS on Intel, and
+* `/usr/local` for macOS on Intel (legacy, [Tier 3 support](Support-Tiers.md#tier-3)), and
 * `/home/linuxbrew/.linuxbrew` for Linux.
 
 Compatible [custom prefixes](Support-Tiers.md#custom-prefixes) can also use bottles.
