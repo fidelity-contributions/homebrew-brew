@@ -195,10 +195,12 @@ module Homebrew
 
       sig { params(url: String).returns(T.nilable([String, Purl])) }
       def self.registry_purl(url)
+        url = url.sub(/#.*\z/, "")
         basename = decode(File.basename(url)).sub(ARCHIVE_EXTENSIONS, "")
 
         case url
-        when %r{\Ahttps://files\.pythonhosted\.org/packages/(?:[^/]+/){3}(?![^/]+\.whl\z)}
+        # Older formula revisions use the legacy pypi.python.org host.
+        when %r{\Ahttps://(?:files\.pythonhosted|pypi\.python)\.org/packages/(?:[^/]+/){3}(?![^/]+\.whl\z)}
           # PEP 440 canonical versions contain no hyphen, so the last one delimits.
           name, _, version = basename.rpartition("-")
           return if name.empty?
