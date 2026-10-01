@@ -131,7 +131,7 @@ class SystemCommand
       result = new(executable, args:, sudo: false, sudo_as_root: false, env:, input:, must_succeed: false,
                    print_stdout:, print_stderr: Homebrew::EnvConfig.no_sudo? ? print_stderr : false,
                    debug:, verbose:, secrets:, chdir:, timeout:).run!
-      if result.success? || Homebrew::EnvConfig.no_sudo?
+      if result.success? || !sudo_available?
         result.assert_success! if must_succeed
         return result
       end
@@ -140,6 +140,18 @@ class SystemCommand
 
     new(executable, args:, sudo:, sudo_as_root:, env:, input:, must_succeed:, print_stdout:, print_stderr:, debug:,
         verbose:, secrets:, chdir:, timeout:).run!
+  end
+
+  # Check access once, when a command first needs sudo.
+  sig { returns(T::Boolean) }
+  def self.sudo_available?
+    return false if Homebrew::EnvConfig.no_sudo?
+    return true if ENV["HOMEBREW_SUDO_CHECKED"] == "1"
+
+    ENV["HOMEBREW_NO_SUDO"] = "1" unless run("/bin/bash", args:         [HOMEBREW_LIBRARY_PATH/"utils/sudo.sh"],
+                                                          print_stderr: false).success?
+    ENV["HOMEBREW_SUDO_CHECKED"] = "1"
+    !Homebrew::EnvConfig.no_sudo?
   end
 
   sig {
@@ -398,8 +410,7 @@ class SystemCommand
 
   sig { returns(T::Array[String]) }
   def sudo_prefix
-    # Availability is detected in brew.sh.
-    if Homebrew::EnvConfig.no_sudo?
+    unless self.class.sudo_available?
       raise ErrorDuringExecution.new([executable.to_s, *expanded_args], status: 1, secrets: @secrets,
                                      output: [[:stderr, "sudo is disabled by HOMEBREW_NO_SUDO.\n"]])
     end

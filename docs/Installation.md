@@ -63,7 +63,8 @@ To disable Homebrew's sudo calls explicitly:
 export HOMEBREW_NO_SUDO=1
 ```
 
-When unset, Homebrew disables sudo only when it is missing, reports a recognised inability to elevate privileges or a non-interactive check explicitly denies access.
+When unset, Homebrew checks sudo access only when an operation needs it.
+Homebrew disables sudo only when it is missing, reports a recognised inability to elevate privileges or a non-interactive check explicitly denies access.
 Password requirements and inconclusive failures preserve normal behaviour.
 Optional filesystem operations try without sudo before retrying with it.
 When sudo is disabled, casks requiring it for installers, keyboard layouts or install steps are rejected before installation.

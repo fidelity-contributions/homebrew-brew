@@ -180,7 +180,7 @@ module Cask
     def self.ensure_caskroom_exists
       return if path.exist?
 
-      if !path.parent.writable? && !Homebrew::EnvConfig.no_sudo? && !ENV.key?("SUDO_ASKPASS") && $stdout.tty?
+      if !path.parent.writable? && !ENV.key?("SUDO_ASKPASS") && $stdout.tty? && SystemCommand.sudo_available?
         ohai "Creating Caskroom directory: #{path}",
              "We'll set permissions properly so we won't need sudo in the future."
       end

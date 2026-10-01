@@ -29,7 +29,6 @@ module Homebrew
       def delete_or_move(paths, sudo: false)
         return if paths.blank?
 
-        sudo &&= !Homebrew::EnvConfig.no_sudo?
         symlinks, paths = paths.partition(&:symlink?)
 
         FileUtils.rm_f symlinks
@@ -38,6 +37,7 @@ module Homebrew
         paths.select!(&:exist?)
         return if paths.blank?
 
+        sudo &&= SystemCommand.sudo_available?
         if ENV["GITHUB_ACTIONS_HOMEBREW_SELF_HOSTED"].present?
           if sudo
             test "sudo", "rm", "-rf", *paths.map(&:to_s)

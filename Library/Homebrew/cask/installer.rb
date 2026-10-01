@@ -388,7 +388,7 @@ on_request: true)
 
     sig { void }
     def check_requirements
-      if Homebrew::EnvConfig.no_sudo? && (artifact = @cask.artifacts.find(&:requires_sudo?))
+      if (artifact = @cask.artifacts.find(&:requires_sudo?)) && !SystemCommand.sudo_available?
         raise CaskError,
               "#{@cask}: The #{artifact.class.dsl_key} artifact requires sudo, but HOMEBREW_NO_SUDO is set."
       end
