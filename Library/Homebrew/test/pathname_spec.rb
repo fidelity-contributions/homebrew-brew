@@ -31,7 +31,7 @@ RSpec.describe Pathname do
     before do
       mkdir_p dir/"a-directory"
       touch [dir/".DS_Store", dir/"a-file"]
-      File.truncate(dir/"a-file", 1_048_576)
+      File.truncate(dir/"a-file", 1_000_000)
       ln_s dir/"a-file", dir/"a-symlink"
       ln_s dir/"a-directory", dir/"a-directory-symlink"
       ln dir/"a-file", dir/"a-hardlink"
