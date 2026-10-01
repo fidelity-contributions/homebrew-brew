@@ -184,8 +184,42 @@ RSpec.describe Homebrew::Vulns::Identify do
                                   purl: "pkg:pypi/ruamel.yaml@0.18.6")
       end
 
+      it "parses the legacy pypi.python.org host" do
+        url = "https://pypi.python.org/packages/49/6f/18/requests-2.10.0.tar.gz"
+        expect(result(url)).to eq(ecosystem: "PyPI", name: "requests", version: "2.10.0",
+                                  purl: "pkg:pypi/requests@2.10.0")
+      end
+
+      it "parses a legacy source path" do
+        url = "https://pypi.python.org/packages/source/G/GitPython/GitPython-1.0.1.tar.gz"
+        expect(result(url)).to eq(ecosystem: "PyPI", name: "gitpython", version: "1.0.1",
+                                  purl: "pkg:pypi/gitpython@1.0.1")
+      end
+
+      it "ignores a fragment in a legacy source archive URL" do
+        url = "https://pypi.python.org/packages/37/1a/e271b2937c05c1da265415103725e0610fb96871a2d7ddf68b999ac5db8f/" \
+              "boto3-1.4.0.tar.gz#md5=4b5454e8d29dede99092616023828a21"
+        expect(result(url)).to eq(ecosystem: "PyPI", name: "boto3", version: "1.4.0",
+                                  purl: "pkg:pypi/boto3@1.4.0")
+      end
+
       it "returns nil for a wheel" do
         url = "https://files.pythonhosted.org/packages/aa/bb/cc/foo-1.0-py3-none-any.whl"
+        expect(result(url)).to be_nil
+      end
+
+      it "returns nil for a wheel with a fragment" do
+        url = "https://files.pythonhosted.org/packages/aa/bb/cc/foo-1.0-py3-none-any.whl#md5=abc"
+        expect(result(url)).to be_nil
+      end
+
+      it "returns nil for a legacy wheel" do
+        url = "https://pypi.python.org/packages/aa/bb/cc/foo-1.0-py3-none-any.whl"
+        expect(result(url)).to be_nil
+      end
+
+      it "returns nil for a legacy wheel with a fragment" do
+        url = "https://pypi.python.org/packages/aa/bb/cc/foo-1.0-py3-none-any.whl#md5=abc"
         expect(result(url)).to be_nil
       end
     end
