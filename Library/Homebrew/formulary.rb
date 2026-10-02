@@ -180,13 +180,15 @@ module Formulary
     end
     # rubocop:enable Sorbet/ConstantsFromStrings
   ensure
-    # TODO: Make printing to stdout an error so that we can print a tap name.
-    #       See discussion at https://github.com/Homebrew/brew/pull/20226#discussion_r2195886888
     if old_stdout && $stdout.respond_to?(:string) && (printed_to_stdout = $stdout.string.strip.presence)
-      opoo <<~WARNING
+      warning = <<~WARNING
         Formula #{name} attempted to print the following while being loaded:
         #{printed_to_stdout}
       WARNING
+      if (tap = Tap.from_path(path)) && (issues_url = tap.issues_url)
+        warning += Utils::Output.issue_reporting_message(issues_url, homebrew: tap.official?)
+      end
+      opoo warning
     end
     $stdout = old_stdout if old_stdout
   end
