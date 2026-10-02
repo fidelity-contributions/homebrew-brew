@@ -15,46 +15,68 @@ if ENV["HOMEBREW_SORBET_RUNTIME"]
       module Types
         class FixedArray < Base
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class FixedHash < Base
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class Intersection < Base
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedArray < TypedEnumerable
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedEnumerable < Base
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedEnumeratorChain < TypedEnumerable
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedEnumeratorLazy < TypedEnumerable
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedHash < TypedEnumerable
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedRange < TypedEnumerable
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class TypedSet < TypedEnumerable
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
 
         class Union < Base
           def valid?(obj) = recursively_valid?(obj)
+          sig { override.void }
+          def build_lazy_fields; end
         end
       end
     end
