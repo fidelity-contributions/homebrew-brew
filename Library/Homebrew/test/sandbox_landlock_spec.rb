@@ -423,6 +423,25 @@ RSpec.describe Sandbox::Landlock do
   end
 
   describe "#command" do
+    it "retains read and write grants for undeclared var descendants on Linux" do
+      root = mktmpdir
+      (root/"var/homebrew/locks").mkpath
+      (root/"home").mkpath
+      stub_const("HOMEBREW_LOCKS", root/"var/homebrew/locks")
+      stub_const("HOMEBREW_TEMP_CELLAR", root/"var/homebrew/tmp/.cellar")
+      allow(Sandbox).to receive(:full_write_isolation?).and_return(described_class.full_write_isolation?)
+      allow(landlock).to receive(:root_path).and_return(root)
+      sandbox.allow_write_path root/"var"
+      sandbox.deny_read_path root/"home"
+      sandbox.protect_homebrew_state
+
+      expect(landlock).to receive(:readable_paths).with([root/"home"]).and_call_original
+
+      landlock.command(["true"], mktmpdir.to_s)
+
+      expect(landlock.writable_paths).to eq((root/"var").to_s => :subpath)
+    end
+
     it "limits an existing dylib symlink's write access to its resolved file" do
       directory = mktmpdir
       (directory/"target").mkpath

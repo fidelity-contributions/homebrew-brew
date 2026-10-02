@@ -1182,7 +1182,7 @@ on_request: installed_on_request?, options:)
           sandbox.allow_write_temp_and_cache
           sandbox.deny_all_network unless formula.network_access_allowed?(:build)
         end
-        sandbox.deny_write_temp_cellar
+        sandbox.protect_homebrew_state
       end
     end
 
@@ -1222,6 +1222,7 @@ on_request: installed_on_request?, options:)
         sandbox.deny_read_home
         sandbox.allow_write_temp_and_cache
         sandbox.allow_write_path(staging_path) if staging_path
+        sandbox.protect_homebrew_state
       end
     end
   end
@@ -1466,7 +1467,7 @@ on_request: installed_on_request?, options:)
         Keg.keg_link_directories.each do |dir|
           sandbox.allow_write_path "#{HOMEBREW_PREFIX}/#{dir}"
         end
-        sandbox.deny_write_temp_cellar
+        sandbox.protect_homebrew_state
       end
     end
   # Handle all possible exceptions when postinstall does not complete.

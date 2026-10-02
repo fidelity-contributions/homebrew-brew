@@ -454,6 +454,21 @@ RSpec.describe Sandbox do
     end
   end
 
+  describe "#protect_homebrew_state" do
+    it "protects locks after granting access to var on macOS" do
+      allow(described_class).to receive(:full_write_isolation?).and_return(true)
+      sandbox.allow_read path: HOMEBREW_PREFIX/"var", type: :subpath
+      sandbox.allow_write_path HOMEBREW_PREFIX/"var"
+      sandbox.protect_homebrew_state
+
+      expect(sandbox.profile.rules.select { |rule| rule.filter&.path == HOMEBREW_LOCKS.realpath.to_s })
+        .to contain_exactly(
+          have_attributes(allow: false, operation: "file-write*"),
+          have_attributes(allow: false, operation: "file-read*"),
+        )
+    end
+  end
+
   describe "#add_install_hook_rules" do
     it "applies common install hook restrictions" do
       expect(sandbox).to receive(:allow_write_temp_and_cache).ordered

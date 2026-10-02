@@ -196,7 +196,8 @@ RSpec.describe FormulaInstaller do
 
       allow(formula).to receive(:logs).and_return(mktmpdir)
       allow(Sandbox).to receive_messages(new: sandbox, use_for?: true)
-      expect(sandbox).to receive(:allow_write_temp_and_cache)
+      expect(sandbox).to receive(:allow_write_temp_and_cache).ordered
+      expect(sandbox).to receive(:protect_homebrew_state).ordered
       expect(sandbox).not_to receive(:allow_write_cellar)
       expect(sandbox).not_to receive(:deny_all_network)
       expect(sandbox).to receive(:run) do |*args|
@@ -1926,7 +1927,7 @@ RSpec.describe FormulaInstaller do
       expect(sandbox).not_to receive(:allow_write_temp_and_cache)
       expect(sandbox).not_to receive(:allow_write_path).with(HOMEBREW_CACHE)
       expect(sandbox).to receive(:deny_all_network).ordered
-      expect(sandbox).to receive(:deny_write_temp_cellar).ordered
+      expect(sandbox).to receive(:protect_homebrew_state).ordered
       expect(sandbox).to receive(:run) do
         staging_path = Pathname(ENV.fetch("HOMEBREW_BUILD_STAGING_PATH"))
         expect(staging_path).to be_a_directory
@@ -1969,7 +1970,7 @@ RSpec.describe FormulaInstaller do
       allow(sandbox).to receive_messages(record_log: nil, allow_read_if_exists: nil, allow_write_temp_and_cache: nil,
                                          allow_write_log: nil, allow_cvs: nil, allow_fossil: nil,
                                          allow_write_xcode: nil, allow_write_cellar: nil, deny_read_home: nil,
-                                         deny_write_temp_cellar: nil, run: nil)
+                                         protect_homebrew_state: nil, run: nil)
       allow(formula).to receive_messages(logs: mktmpdir, update_head_version: nil, prefix: mktmpdir,
                                          network_access_allowed?: true)
       allow(Keg).to receive(:new).and_return(instance_double(Keg, empty_installation?: false))
