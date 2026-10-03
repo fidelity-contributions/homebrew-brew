@@ -133,6 +133,24 @@ RSpec.describe Formulary do
       end
     end
 
+    it "points to the tap's issues when a formula prints while being loaded" do
+      expect do
+        described_class.load_formula(
+          "printing-formula",
+          CoreTap.instance.new_formula_path("printing-formula"),
+          <<~RUBY,
+            class PrintingFormula < Formula
+              puts "Hello from the formula"
+              url "https://brew.sh/printing-formula-1.0.tar.gz"
+            end
+          RUBY
+          "PrintingFormulaNamespace",
+          flags:         [],
+          ignore_errors: false,
+        )
+      end.to output(%r{github\.com/Homebrew/homebrew-core/issues}).to_stderr
+    end
+
     it "refuses untrusted third-party tap formulae when trust is enabled" do
       tap = Tap.fetch("formularytrust", "foo")
       formula_path = tap.formula_dir/"sensitive-env.rb"
