@@ -15,11 +15,16 @@ This applies even when the current formula is known to be affected: knowing toda
 An `introduced: "0"` boundary asserts that every earlier version is affected; it is not a marker for an unknown introduction.
 
 Automatic matching deliberately favours range accuracy over coverage.
-Unreadable or uncomparable history, disjoint affected intervals and affected and unaffected builds sharing a `pkg_version` can prevent a new record from being emitted.
+Unreadable or uncomparable history and disjoint affected intervals can prevent a new record from being emitted.
 The command warns and counts these as history-unavailable skips instead of inventing a boundary.
 This includes a historical subject whose prerelease suffix changes its `SEMVER` range state compared with its release version.
 A skip does not mean the formula is unaffected, so an ingest run can omit a currently affected formula and is not evidence of complete vulnerability coverage.
 Reviewers must establish the ranges and matching provenance together from upstream evidence and formula build history, then contribute the record manually.
+
+For a new record, a `pkg_version` shared by affected and unaffected builds is conservatively included in the affected interval, because the advisory cannot distinguish those builds by version.
+This can happen when a resource changes without a formula revision bump.
+An affected build at or beyond the proposed fix, including a fix that shares its `pkg_version` with affected builds, or a distinct unaffected version inside the interval, still requires review.
+Existing-range reconciliation and reintroduction checks retain their stricter rules for mixed builds, so reconciliation reports a record whose `introduced` version has mixed builds as an unrepresentable interval and leaves it unchanged.
 
 Current-version prerelease ambiguity produces an uncomparable review lead with no `range_state`, reduced confidence and `database_specific.review_reason: "prerelease_boundary"`.
 Ingest drops these leads and lists their IDs by reason in its run summary.

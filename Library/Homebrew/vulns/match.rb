@@ -945,8 +945,9 @@ module Homebrew
       end
 
       # Return the earliest affected `pkg_version` for a new record. Check all
-      # history: one interval must cover every affected build and no known
-      # non-affected build, including resource changes without a revision bump.
+      # history: one interval must cover every affected version and no version
+      # with only non-affected builds. A resource change without a revision bump
+      # leaves the shared version affected if any of its builds were affected.
       # Unreadable history and unrepresentable intervals require manual review.
       sig { params(formula: Formula, hit: Hit, first_fixed: T.nilable(String)).returns(T.any(String, Symbol)) }
       def first_introduced_version(formula, hit, first_fixed: nil)
@@ -971,6 +972,8 @@ module Homebrew
 
         fixed = PkgVersion.parse(first_fixed) if first_fixed
         return :history_unavailable if fixed && affected_versions.any? { |version| version >= fixed }
+
+        unaffected_versions -= affected_versions
         if unaffected_versions.any? { |version| version >= introduced && (!fixed || version < fixed) }
           return :history_unavailable
         end
