@@ -22,7 +22,9 @@ RSpec.describe Homebrew::DevCmd::Contributions do
       "--maintainer-report-csv=2026-2",
       "current directory",
       "brew-contributions-FROM-to-TO-USER.csv",
-      "Only Maintainers listed at the end of that quarter are included",
+      "--from and --to",
+      "Only Maintainers listed at the end of that period are included",
+      "role recommendations use up to four full quarters of reports",
       "Completed-period GitHub searches are cached in Homebrew's cache",
       "Repository-scoped follow-up searches ensure role activity checks remain accurate",
       "YEAR-1 is December of the previous year through February",
@@ -161,7 +163,7 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     expect { command.maintainer_report_users(repository_refs, "2025-09-01") }
       .to raise_error(SystemExit)
       .and output(<<~EOS).to_stderr
-        Error: Not listed as Maintainers at the end of the reporting quarter: carol and dave.
+        Error: Not listed as Maintainers at the end of the reporting period: carol and dave.
       EOS
   end
 
@@ -260,12 +262,12 @@ RSpec.describe Homebrew::DevCmd::Contributions do
 
     reports = Dir.chdir(mktmpdir) do
       {
-        "2025-09-01-to-2025-12-01" => [true, true],
-        "2025-06-01-to-2025-09-01" => [true, false],
-        "2025-03-01-to-2025-06-01" => [false, false],
-      }.each do |dates, activity|
+        "2025-09-01-to-2025-12-01" => [25, 25],
+        "2025-06-01-to-2025-09-01" => [50, 0],
+        "2025-03-01-to-2025-06-01" => [0, 0],
+      }.each do |dates, totals|
         Pathname("brew-contributions-#{dates}.csv")
-          .write("username,maintainer met,lead met\nAlice,#{activity.join(",")}\n")
+          .write("username,brew total,core total,cask total\nAlice,#{totals.join(",")},0\n")
       end
 
       command.previous_maintainer_reports("2025-12-01")
@@ -286,6 +288,127 @@ RSpec.describe Homebrew::DevCmd::Contributions do
     end.to output(<<~EOS).to_stderr
       Warning: Could not find brew-contributions-2025-09-01-to-2025-12-01.csv; omitting the potential new role column.
     EOS
+  end
+
+  it "combines monthly counts into quarterly activity alongside legacy reports" do
+    command = described_class.new(["--maintainer-report-csv", "--from=2026-12-01", "--to=2027-01-01"])
+    reports = Dir.chdir(mktmpdir) do
+      [9, 10, 11].each do |month|
+        from = Date.new(2026, month, 1)
+        Pathname("brew-contributions-#{from}-to-#{from.next_month}.csv")
+          .write("username,brew total,core total,cask total,maintainer met,lead met\nAlice,10,10,0,false,false\n")
+      end
+      Pathname("brew-contributions-2026-06-01-to-2026-09-01.csv")
+        .write("username,brew total,core total,cask total\nAlice,50,0,0\n")
+      Pathname("brew-contributions-2026-03-01-to-2026-06-01.csv")
+        .write("username,brew total,core total,cask total\nAlice,0,0,0\n")
+      command.previous_maintainer_reports("2026-12-01")
+    end
+
+    expect(reports).to eq([
+      { "alice" => [true, true] }, { "alice" => [true, false] }, { "alice" => [false, false] }
+    ])
+  end
+
+  context "with monthly reports" do
+    sig { returns(Homebrew::DevCmd::Contributions) }
+    let(:command) do
+      described_class.new(["--maintainer-report-csv", "--from=2026-11-01", "--to=2026-12-01"])
+    end
+
+    before do
+      allow(Utils::GemSetup).to receive(:install_bundler_gems!)
+      allow(command).to receive_messages(
+        prepare_contribution_repositories: {},
+        maintainer_report_users:           [
+          { "alice" => "Alice" }, { "alice" => true }, { "alice" => "2020-01-01" }
+        ],
+        scan_contributions:                {
+          "alice" => Homebrew::DevCmd::Contributions::PRIMARY_REPOS.to_h do |repository|
+            count = (repository == "Homebrew/homebrew-cask") ? 0 : 5
+            [repository, { merged_pr_author: count, merged_pr_merger: 0, merged_pr: count,
+                           approved_pr_review: 0, coauthor: 0 }]
+          end,
+        },
+      )
+      allow(command).to receive(:previous_maintainer_reports)
+        .with("2026-09-01").and_return([{ "alice" => [false, false] }])
+    end
+
+    it "writes one month of counts but assesses a complete quarter" do
+      report = Dir.chdir(mktmpdir) do
+        [9, 10].each do |month|
+          from = Date.new(2026, month, 1)
+          Pathname("brew-contributions-#{from}-to-#{from.next_month}.csv")
+            .write("username,brew total,core total,cask total\nAlice,10,10,0\n")
+        end
+        command.run
+        CSV.read("brew-contributions-2026-11-01-to-2026-12-01.csv", headers: true).first
+      end
+
+      expect(report&.values_at("total", "maintainer met", "lead met", "potential new role"))
+        .to eq(["10", "true", "true", "Lead Maintainer"])
+    end
+
+    it "omits recommendations when a month of the assessment quarter is missing" do
+      report = Dir.chdir(mktmpdir) do
+        command.run
+        CSV.read("brew-contributions-2026-11-01-to-2026-12-01.csv", headers: true)
+      end
+
+      expect(report.headers).not_to include("potential new role")
+    end
+
+    it "uses the latest completed quarter during an incomplete quarter" do
+      allow(command).to receive(:args).and_return(described_class.new(
+        ["--maintainer-report-csv", "--from=2026-09-01", "--to=2026-10-01"],
+      ).args)
+      allow(command).to receive(:previous_maintainer_reports)
+        .with("2026-06-01").and_return([{ "alice" => [false, false] }])
+      report = Dir.chdir(mktmpdir) do
+        Pathname("brew-contributions-2026-06-01-to-2026-09-01.csv")
+          .write("username,brew total,core total,cask total\nalice,25,25,0\n")
+        command.run
+        CSV.read("brew-contributions-2026-09-01-to-2026-10-01.csv", headers: true).first
+      end
+
+      expect(report&.values_at("total", "maintainer met", "lead met", "potential new role"))
+        .to eq(["10", "true", "true", "Lead Maintainer"])
+    end
+
+    it "combines weekly reports without counting overlapping monthly reports twice" do
+      allow(command).to receive(:args).and_return(described_class.new(
+        ["--maintainer-report-csv", "--from=2026-11-24", "--to=2026-12-01"],
+      ).args)
+      report = Dir.chdir(mktmpdir) do
+        from = Date.new(2026, 9, 1)
+        while from < Date.new(2026, 11, 24)
+          Pathname("brew-contributions-#{from}-to-#{from + 7}.csv")
+            .write("username,brew total,core total,cask total\nalice,1,1,0\n")
+          from += 7
+        end
+        Pathname("brew-contributions-2026-11-01-to-2026-12-01.csv")
+          .write("username,brew total,core total,cask total\nalice,50,50,0\n")
+        command.run
+        CSV.read("brew-contributions-2026-11-24-to-2026-12-01.csv", headers: true).first
+      end
+
+      expect(report&.values_at("total", "maintainer met", "lead met", "potential new role"))
+        .to eq(%w[10 false false None])
+    end
+
+    it "can assess monthly requirements independently of the reporting dates" do
+      stub_const("Homebrew::DevCmd::Contributions::ACTIVITY_PERIOD_MONTHS", 1)
+      allow(command).to receive(:previous_maintainer_reports)
+        .with("2026-11-01").and_return([{ "alice" => [false, false] }])
+      report = Dir.chdir(mktmpdir) do
+        command.run
+        CSV.read("brew-contributions-2026-11-01-to-2026-12-01.csv", headers: true).first
+      end
+
+      expect(report&.values_at("total", "maintainer met", "lead met", "potential new role"))
+        .to eq(%w[10 false false None])
+    end
   end
 
   it "applies multi-quarter activity requirements to potential roles" do
