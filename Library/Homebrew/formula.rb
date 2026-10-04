@@ -2292,7 +2292,7 @@ class Formula
       built_by = tap&.user || "Homebrew"
       commit = if (revision = active_spec.specs[:revision])
         revision
-      elsif active_spec.url&.end_with?(".tar", ".tar.gz", ".tgz")
+      elsif cached_download.basename.to_s.end_with?(".tar", ".tar.gz", ".tgz")
         Utils::Git.get_tar_commit_id(cached_download)
       elsif (repo = buildpath)
         Utils.git_head(repo, safe: false)
