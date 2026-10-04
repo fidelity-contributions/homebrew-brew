@@ -134,6 +134,32 @@ module Utils
       Utils.popen_read(git, "-C", repository, "diff", "--name-only", "--no-relative", base_ref).split("\n")
     end
 
+    # Extract commit ID using `git get-tar-commit-id`.
+    #
+    # The file can be an uncompressed .tar or gzip-compressed .tar.gz.
+    sig { params(file: T.any(Pathname, String)).returns(T.nilable(String)) }
+    def self.get_tar_commit_id(file)
+      file = Pathname(file)
+      return unless file.file?
+      return unless file.readable?
+
+      # `git get-tar-commit-id` is documented to only read the first 1024 bytes.
+      # See https://git-scm.com/docs/git-get-tar-commit-id
+      headersize = 1024
+      filename = file.basename.to_s
+      header = if filename.end_with?(".tar.gz", ".tgz")
+        Utils.popen_read("gunzip", "-c", "-q", "--", file) { |io| io.read(headersize) }
+      elsif filename.end_with?(".tar")
+        file.binread(headersize)
+      end
+      return if header.nil? || header.size < headersize
+
+      commit = Utils.popen_write(git, "get-tar-commit-id") { |io| io.write(header) }
+      return unless $CHILD_STATUS.success?
+
+      commit.chomp.presence
+    end
+
     sig { void }
     def self.ensure_installed!
       return if available?
