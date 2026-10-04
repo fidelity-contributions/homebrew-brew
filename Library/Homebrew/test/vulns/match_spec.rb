@@ -1735,12 +1735,105 @@ RSpec.describe Homebrew::Vulns::Match do
         expect(matcher.first_introduced_version(current, hit)).to eq "2.0"
       end
 
-      it "rejects affected and non-affected builds sharing a pkg_version" do
+      it "includes affected and non-affected builds sharing a pkg_version" do
         stub_history(["2.31.0", "2.30.0", "2.30.0"])
         allow(matcher).to receive(:aggregate_state_at).and_return(:affected, :affected, :affected, :not_applicable)
 
         expect(matcher.first_introduced_version(requests, hit_fixed_at("2.32.0")))
-          .to eq :history_unavailable
+          .to eq "2.30.0"
+      end
+
+      context "when a bundled resource changes without a formula revision" do
+        let(:hit) do
+          make_hit(
+            vuln("id" => "CVE-1", "affected" => [
+              { "package" => { "ecosystem" => "PyPI", "name" => "certifi" },
+                "ranges"  => [{ "type" => "ECOSYSTEM", "events" => [
+                  { "introduced" => "1.0" }, { "fixed" => "1.2" }
+                ] }] },
+            ]),
+            ev(:registry, ecosystem: "PyPI", name: "certifi", subject_version: "1.2", resource: "certifi"),
+          )
+        end
+
+        it "includes a label whose resource moved into the affected range" do
+          stub_history([["2.31.0", "1.2"], ["2.30.0", "1.1"], ["2.30.0", "0.9"], ["2.29.0", "0.9"]])
+          first_fixed = matcher.first_fixed_version(requests, hit)
+
+          expect(first_fixed).to eq "2.31.0"
+          expect(matcher.first_introduced_version(requests, hit, first_fixed:)).to eq "2.30.0"
+        end
+
+        it "includes a mixed label regardless of the order of its builds" do
+          stub_history([["2.31.0", "1.2"], ["2.30.0", "1.1"], ["2.30.0", "1.2"], ["2.29.0", "0.9"]])
+          first_fixed = matcher.first_fixed_version(requests, hit)
+
+          expect(first_fixed).to eq "2.31.0"
+          expect(matcher.first_introduced_version(requests, hit, first_fixed:)).to eq "2.30.0"
+        end
+
+        it "includes a label where the affected resource was added" do
+          stub_history([["2.31.0", "1.2"], ["2.30.0", "1.1"], ["2.30.0"], ["2.29.0"]])
+
+          expect(matcher.first_introduced_version(requests, hit, first_fixed: "2.31.0")).to eq "2.30.0"
+        end
+
+        def conditional_resource_introduction(os)
+          Homebrew::SimulateSystem.with(os:, arch: :arm) do
+            current = formula("requests") do
+              T.bind(self, T.class_of(Formula))
+              url "https://files.pythonhosted.org/packages/aa/bb/cc/requests-2.30.0.tar.gz"
+              on_linux do
+                resource("certifi") { url "https://files.pythonhosted.org/packages/11/22/33/certifi-1.1.tar.gz" }
+              end
+            end
+            formulae = stub_history(["2.30.0", "2.30.0"])
+            allow(formulae.fetch(0)).to receive(:resources).and_return(current.resources)
+
+            matcher.first_introduced_version(current, hit)
+          end
+        end
+
+        it "does not invent an affected macOS build for a Linux-only resource" do
+          expect(conditional_resource_introduction(:macos)).to eq :history_unavailable
+        end
+
+        it "includes a mixed Linux label for a Linux-only resource" do
+          expect(conditional_resource_introduction(:linux)).to eq "2.30.0"
+        end
+
+        it "still holds unreadable history after a mixed label" do
+          stub_history([["2.31.0", "1.2"], ["2.30.0", "1.1"], ["2.30.0", "1.2"], nil])
+
+          expect(matcher.first_introduced_version(requests, hit, first_fixed: "2.31.0"))
+            .to eq :history_unavailable
+        end
+
+        it "still holds an uncomparable resource sharing an affected label" do
+          formulae = stub_history([["2.31.0", "1.2"], ["2.30.0", "1.1"], ["2.30.0", "1.2"]])
+          allow(formulae.fetch(2).resource("certifi")).to receive(:url)
+            .and_return("https://example.com/certifi.tar.gz")
+
+          expect(matcher.first_introduced_version(requests, hit, first_fixed: "2.31.0"))
+            .to eq :history_unavailable
+        end
+
+        it "still holds a fix that shares a label with affected builds" do
+          stub_history([["2.31.0", "1.2"], ["2.30.0", "1.2"], ["2.30.0", "1.1"], ["2.29.0", "0.9"]])
+          first_fixed = matcher.first_fixed_version(requests, hit)
+
+          expect(first_fixed).to eq "2.30.0"
+          expect(matcher.first_introduced_version(requests, hit, first_fixed:)).to eq :history_unavailable
+        end
+
+        it "still holds a distinct unaffected label between affected runs" do
+          stub_history([
+            ["2.31.0", "1.2"], ["2.30.0", "1.1"], ["2.29.0", "1.2"], ["2.28.0", "1.1"], ["2.28.0", "0.9"]
+          ])
+
+          expect(matcher.first_introduced_version(requests, hit, first_fixed: "2.31.0"))
+            .to eq :history_unavailable
+        end
       end
 
       it "does not treat an affected state override as evidence of an affected historical build" do
