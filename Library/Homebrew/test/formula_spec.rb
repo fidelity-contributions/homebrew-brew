@@ -3721,6 +3721,39 @@ RSpec.describe Formula do
 
       before { allow(f).to receive(:time).and_return(Time.parse(date)) }
 
+      context "when url has a git revision" do
+        let(:commit) { "f5e00e485e7aa4c5baa20355b27e3b84a6912790" }
+        let(:f) do
+          commit_ = commit
+          formula do
+            T.bind(self, T.class_of(Formula))
+            url "https://brew.sh/foo.git", tag: "1.0", revision: commit_.to_s
+          end
+        end
+
+        it "uses it for main.commit" do
+          expect(std_go_args).to include("-ldflags=#{expected_ldflags}")
+        end
+      end
+
+      context "when url is tarball with extractable commit" do
+        let(:commit) { "f5e00e485e7aa4c5baa20355b27e3b84a6912790" }
+        let(:f) do
+          formula do
+            T.bind(self, T.class_of(Formula))
+            url "https://brew.sh/foo-1.0.tar.gz"
+          end
+        end
+
+        before do
+          allow(Utils::Git).to receive(:get_tar_commit_id).and_return(commit)
+        end
+
+        it "uses it for main.commit" do
+          expect(std_go_args).to include("-ldflags=#{expected_ldflags}")
+        end
+      end
+
       context "when in a git repository" do
         let(:buildpath) { mktmpdir }
         let(:commit) { Utils.popen_read("git", "-C", buildpath, "rev-parse", "HEAD").chomp }
