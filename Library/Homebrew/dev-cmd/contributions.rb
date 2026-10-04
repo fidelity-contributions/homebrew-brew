@@ -28,8 +28,10 @@ module Homebrew
       }.freeze, T::Hash[Symbol, String])
       MAX_PR_SEARCH = 100
       # https://docs.brew.sh/Homebrew-Governance#maintainer
+      ACTIVITY_PERIOD_MONTHS = 3
       MAINTAINER_ACTIVITY_THRESHOLD = 50
       # https://docs.brew.sh/Homebrew-Governance#lead-maintainer
+      LEAD_ACTIVITY_PERIODS = 4
       LEAD_REPOSITORY_ACTIVITY_THRESHOLD = 25
       MAX_CONTRIBUTIONS = T.let(MAINTAINER_ACTIVITY_THRESHOLD * 10, Integer)
       QUALIFYING_CONTRIBUTION_TYPES = [:merged_pr, :approved_pr_review, :coauthor].freeze
@@ -50,7 +52,7 @@ module Homebrew
 
       cmd_args do
         usage_banner "`contributions` [`--user=`] [`--repositories=`] [`--quarter=`] [`--from=`] [`--to=`] " \
-                     "[`--csv`] [`--maintainer-report-csv=`]"
+                     "[`--csv`] [`--maintainer-report-csv`]"
         description <<~EOS
           Summarise contributions to Homebrew repositories.
         EOS
@@ -58,7 +60,7 @@ module Homebrew
                     description: "Specify a comma-separated list of GitHub usernames or email addresses to find " \
                                  "contributions from. Omitting this flag searches Homebrew maintainers and " \
                                  "requires access to the `Homebrew/maintainers` team. " \
-                                 "With `--maintainer-report-csv`, only matching quarter-end Maintainers are included."
+                                 "With `--maintainer-report-csv`, only matching period-end Maintainers are included."
         comma_array "--repositories",
                     description: "Specify a comma-separated list of repositories to search. " \
                                  "All repositories must be under the same user or organisation. " \
@@ -82,14 +84,16 @@ module Homebrew
                description: "Date (ISO 8601 format) to stop searching contributions."
         switch "--csv",
                description: "Print a CSV of contributions across repositories over the time period."
-        flag   "--maintainer-report-csv=",
+        flag   "--maintainer-report-csv",
                description: "Print a CSV of Maintainer and Lead Maintainer activity criteria using fetched Git " \
                             "histories and GitHub's existing approved-review search for the Homebrew " \
-                            "governance quarter, for example " \
-                            "`--maintainer-report-csv=2026-2`. " \
+                            "governance quarter, for example `--maintainer-report-csv=2026-2`. " \
+                            "Alternatively, omit the value and set `--from` and `--to` for any reporting period. " \
                             "Also write it in the current directory as `brew-contributions-FROM-to-TO.csv`, or " \
                             "`brew-contributions-FROM-to-TO-USER.csv` when filtered with `--user`. " \
-                            "Only Maintainers listed at the end of that quarter are included. " \
+                            "Only Maintainers listed at the end of that period are included. " \
+                            "Activity checks use the latest completed governance quarter; " \
+                            "role recommendations use up to four full quarters of reports. " \
                             "Review searches return at most 100 results and other counts are capped at 500 per " \
                             "repository and contribution type. Repository-scoped follow-up searches ensure " \
                             "role activity checks remain accurate when a count is capped. Completed-period " \
@@ -104,8 +108,6 @@ module Homebrew
         conflicts "--maintainer-report-csv", "--organisation"
         conflicts "--maintainer-report-csv", "--team"
         conflicts "--maintainer-report-csv", "--quarter"
-        conflicts "--maintainer-report-csv", "--from"
-        conflicts "--maintainer-report-csv", "--to"
       end
 
       sig { override.void }
@@ -117,20 +119,32 @@ module Homebrew
         odie "Cannot get contributions as `$HOMEBREW_NO_GITHUB_API` is set!" if Homebrew::EnvConfig.no_github_api?
         Utils::GemSetup.install_bundler_gems!(groups: ["contributions"]) if args.csv? || maintainer_report_csv
 
-        if maintainer_report_csv
-          odie "`--maintainer-report-csv` must be in YEAR-QUARTER format." unless maintainer_report_csv.match?(
-            /\A\d{4}-[1-4]\z/,
-          )
-          quarter_parts = maintainer_report_csv.split("-")
+        if maintainer_report_csv && !args.from && !args.to
+          unless maintainer_report_csv.to_s.match?(/\A\d{4}-[1-4]\z/)
+            odie "`--maintainer-report-csv` requires YEAR-QUARTER or both `--from` and `--to`."
+          end
+          quarter_parts = maintainer_report_csv.to_s.split("-")
           from, to = reporting_quarter_dates(quarter_parts.fetch(1).to_i, quarter_parts.fetch(0).to_i)
-          $stderr.puts "Maintainer report dates: #{from}-to-#{to}"
         else
+          if maintainer_report_csv
+            if args.from.nil? || args.to.nil?
+              odie "`--maintainer-report-csv` requires both `--from` and `--to`."
+            end
+            if maintainer_report_csv.is_a?(String)
+              odie "Use `--maintainer-report-csv` without a value with `--from` and `--to`."
+            end
+          end
           quarter = args.quarter.presence.to_i
           odie "Value for `--quarter` must be between 1 and 4." if args.quarter.present? && !quarter.between?(1, 4)
           quarter_dates = reporting_quarter_dates(quarter) unless quarter.zero?
           from = args.from.presence || quarter_dates&.first || Date.today.prev_year.iso8601
           to = args.to.presence || quarter_dates&.last || (Date.today + 1).iso8601
-          puts "Date range is #{time_period(from:, to:)}." if args.verbose?
+        end
+        if maintainer_report_csv
+          odie "`--from` must precede `--to`." if Date.iso8601(from) >= Date.iso8601(to)
+          $stderr.puts "Maintainer report dates: #{from}-to-#{to}"
+        elsif args.verbose?
+          puts "Date range is #{time_period(from:, to:)}."
         end
 
         require "utils/github"
@@ -255,14 +269,14 @@ module Homebrew
       def maintainer_report_users(repository_refs, to)
         brew_path, brew_ref = repository_refs.fetch("Homebrew/brew")
         require "utils/git"
-        quarter_end_ref = Utils.safe_popen_read(
+        period_end_ref = Utils.safe_popen_read(
           Utils::Git.git, "-C", brew_path, "rev-list", "-1", "--before=#{to}", brew_ref, "--", "README.md"
         ).strip
-        odie "Could not find Homebrew/brew's README at the end of the reporting quarter." if quarter_end_ref.empty?
+        odie "Could not find Homebrew/brew's README at the end of the reporting period." if period_end_ref.empty?
 
         user_names = T.let({}, T::Hash[String, String])
         lead_maintainers = T.let({}, T::Hash[String, T::Boolean])
-        Utils.safe_popen_read(Utils::Git.git, "-C", brew_path, "show", "#{quarter_end_ref}:README.md")
+        Utils.safe_popen_read(Utils::Git.git, "-C", brew_path, "show", "#{period_end_ref}:README.md")
              .dup.force_encoding(Encoding::UTF_8).each_line do |line|
           lead = line.start_with?("Homebrew's [Lead Maintainers]")
           next if !lead &&
@@ -294,7 +308,7 @@ module Homebrew
           end
           unless non_maintainers.empty?
             odie "Not listed as #{Utils.pluralize("Maintainer", non_maintainers.length)} at the end of the " \
-                 "reporting quarter: #{Utils::Text.to_sentence(non_maintainers)}."
+                 "reporting period: #{Utils::Text.to_sentence(non_maintainers)}."
           end
 
           selected_usernames = requested_usernames.values.compact
@@ -304,7 +318,7 @@ module Homebrew
         maintainer_count = Utils.pluralize("maintainer", user_names.length, include_count: true)
         $stderr.puts "Scanning contributions for #{maintainer_count}..."
         maintainer_since_dates = user_names.to_h do |user, name|
-          [user, maintainer_since(brew_path, quarter_end_ref, user, name)]
+          [user, maintainer_since(brew_path, period_end_ref, user, name)]
         end
         [user_names, lead_maintainers, maintainer_since_dates]
       end
@@ -677,14 +691,13 @@ module Homebrew
           .returns(T::Array[T::Hash[String, [T::Boolean, T::Boolean]]])
       }
       def previous_maintainer_reports(from)
-        require "csv"
-
         reports = T.let([], T::Array[T::Hash[String, [T::Boolean, T::Boolean]]])
         period_end = Date.iso8601(from)
-        3.times do
-          period_start = period_end.prev_month(3)
+        (LEAD_ACTIVITY_PERIODS - 1).times do
+          period_start = period_end.prev_month(ACTIVITY_PERIOD_MONTHS)
           path = Pathname("brew-contributions-#{period_start.iso8601}-to-#{period_end.iso8601}.csv")
-          unless path.file?
+          report = maintainer_activity_report(period_start.iso8601, period_end.iso8601)
+          if report.nil?
             if reports.empty?
               opoo "Could not find #{path}; omitting the potential new role column."
             else
@@ -693,19 +706,60 @@ module Homebrew
             break
           end
 
-          report = T.let({}, T::Hash[String, [T::Boolean, T::Boolean]])
-          CSV.foreach(path.to_s, headers: true) do |row|
+          reports << report
+          period_end = period_start
+        end
+        reports
+      end
+
+      sig {
+        params(
+          from:           String,
+          to:             String,
+          current_report: T.nilable([String, String, T::Hash[String, T::Hash[String, Integer]]]),
+        ).returns(T.nilable(T::Hash[String, [T::Boolean, T::Boolean]]))
+      }
+      def maintainer_activity_report(from, to, current_report: nil)
+        require "csv"
+
+        reports = T.let([], T::Array[T::Hash[String, T::Hash[String, Integer]]])
+        while from < to
+          if current_report && current_report[0] == from && current_report[1] <= to
+            reports << current_report[2]
+            from = current_report[1]
+            next
+          end
+
+          report_to, path = Dir["brew-contributions-#{from}-to-*.csv"].filter_map do |file|
+            date = file[/\Abrew-contributions-\d{4}-\d{2}-\d{2}-to-(\d{4}-\d{2}-\d{2})\.csv\z/, 1]
+            [date, file] if date && date > from && date <= to
+          end.max
+          return if path.nil? || report_to.nil?
+
+          totals = T.let({}, T::Hash[String, T::Hash[String, Integer]])
+          CSV.foreach(path, headers: true) do |row|
             next unless row.is_a?(CSV::Row)
 
             username = row["username"]
             next unless username.is_a?(String)
 
-            report[username.downcase] = [row["maintainer met"] == "true", row["lead met"] == "true"]
+            totals[username.downcase] = PRIMARY_REPOS.to_h do |repository|
+              [repository,
+               Integer(row.fetch("#{repository.delete_prefix("Homebrew/").delete_prefix("homebrew-")} total"))]
+            end
           end
-          reports << report
-          period_end = period_start
+          reports << totals
+          from = report_to
         end
-        reports
+        reports.fetch(0).keys.filter_map do |user|
+          next unless reports.all? { |report| report.key?(user) }
+
+          user_totals = PRIMARY_REPOS.map do |repository|
+            reports.sum { |report| report.fetch(user).fetch(repository) }
+          end
+          [user, [user_totals.sum >= MAINTAINER_ACTIVITY_THRESHOLD,
+                  user_totals.count { |total| total >= LEAD_REPOSITORY_ACTIVITY_THRESHOLD } >= 2]]
+        end.to_h
       end
 
       sig {
@@ -735,7 +789,7 @@ module Homebrew
         return role unless lead_activity_met
 
         previous_lead_activity = previous_reports.map { |report| report[user.downcase]&.fetch(1) }
-        return if previous_lead_activity.length < 3 || previous_lead_activity.any?(&:nil?)
+        return if previous_lead_activity.length < LEAD_ACTIVITY_PERIODS - 1 || previous_lead_activity.any?(&:nil?)
 
         previous_lead_activity.all?(true) ? "Lead Maintainer" : role
       end
@@ -757,30 +811,35 @@ module Homebrew
                                          from, to)
         require "csv"
 
-        previous_reports = previous_maintainer_reports(from)
-        # Without previous-quarter data, a potential role would be an unsubstantiated suggestion.
-        include_potential_role = previous_reports.present?
+        period_end = Date.iso8601(to)
+        repository_totals = results.to_h do |user, repositories|
+          [user.downcase, repositories.transform_values do |counts|
+            contribution_count(counts.slice(*QUALIFYING_CONTRIBUTION_TYPES))
+          end]
+        end
+        activity_end = Date.new(period_end.year, period_end.month, 1)
+                           .prev_month(period_end.month % ACTIVITY_PERIOD_MONTHS)
+        activity_start = activity_end.prev_month(ACTIVITY_PERIOD_MONTHS).iso8601
+        activity = maintainer_activity_report(activity_start, activity_end.iso8601,
+                                              current_report: [from, to, repository_totals]) || {}
+        previous_reports = previous_maintainer_reports(activity_start)
+        # Without previous-period data, a potential role would be an unsubstantiated suggestion.
+        include_potential_role = activity.present? && previous_reports.present?
         rows = results.sort_by do |user, _|
           qualifying_total = contribution_count(grand_totals.fetch(user).slice(*QUALIFYING_CONTRIBUTION_TYPES))
           [-qualifying_total, user.downcase]
         end
         rows.map! do |user, user_repositories|
           grand_total = grand_totals.fetch(user)
-          repository_qualifying_totals = user_repositories.transform_values do |counts|
-            contribution_count(counts.slice(*QUALIFYING_CONTRIBUTION_TYPES))
-          end
           qualifying_total = contribution_count(grand_total.slice(*QUALIFYING_CONTRIBUTION_TYPES))
-          maintainer_activity_met = qualifying_total >= MAINTAINER_ACTIVITY_THRESHOLD
           maintainer_since = maintainer_since_dates.fetch(user)
           maintainer_since_date = Date.iso8601(maintainer_since) if maintainer_since
-          period_end = Date.iso8601(to)
           lead_maintainer = lead_maintainers.key?(user.downcase)
-          lead_activity_met = lead_activity_met?(user_repositories)
           role = lead_maintainer ? "Lead Maintainer" : "Maintainer"
-          potential_role = potential_maintainer_role(
-            user, role, maintainer_since_date, period_end, [maintainer_activity_met, lead_activity_met],
-            previous_reports
-          )
+          user_activity = activity[user.downcase]
+          potential_role = if user_activity
+            potential_maintainer_role(user, role, maintainer_since_date, period_end, user_activity, previous_reports)
+          end
 
           capped = grand_total.fetch(:merged_pr_author_hit_cap, 0).positive? ||
                    grand_total.fetch(:approved_pr_review_hit_cap, 0).positive?
@@ -798,11 +857,11 @@ module Homebrew
             maintainer_since_date ? [(period_end - maintainer_since_date).to_i, 0].max : nil,
             *PRIMARY_REPOS.flat_map do |repository|
               counts = user_repositories.fetch(repository)
-              [*counts.values_at(*CONTRIBUTION_TYPES.keys), repository_qualifying_totals.fetch(repository)]
+              [*counts.values_at(*CONTRIBUTION_TYPES.keys), repository_totals.fetch(user.downcase).fetch(repository)]
             end,
             qualifying_total,
-            maintainer_activity_met,
-            lead_activity_met,
+            user_activity&.fetch(0),
+            user_activity&.fetch(1),
             capped,
             role,
             *(include_potential_role ? [potential_role] : []),
