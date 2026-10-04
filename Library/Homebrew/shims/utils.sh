@@ -81,14 +81,20 @@ try_exec_non_system() {
   local file="$1"
   shift
 
+  local paths=()
   local path
   while read -r path
   do
     if [[ "${path}" != "/usr/bin/${file}" ]]
     then
-      safe_exec "${path}" "$@"
+      paths+=("${path}")
     fi
   done < <(type -aP "${file}")
+
+  for path in "${paths[@]}"
+  do
+    safe_exec "${path}" "$@"
+  done
 }
 
 SHIM_FILE="${0##*/}"
