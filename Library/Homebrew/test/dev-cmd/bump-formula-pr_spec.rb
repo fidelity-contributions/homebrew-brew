@@ -85,7 +85,7 @@ RSpec.describe Homebrew::DevCmd::BumpFormulaPr do
         command.run
 
         expect(formula_path.read).to include(source_url, other_url)
-        expect(formula_path.read).not_to include(patch_url)
+        expect(formula_path.read).not_to include(patch_url, "# Backport a build fix.", "\n\n\n")
       end
 
       context "with a dry run" do
