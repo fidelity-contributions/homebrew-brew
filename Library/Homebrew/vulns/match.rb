@@ -1028,24 +1028,30 @@ module Homebrew
 
       sig { params(formula: Formula, hit: Hit).returns(T.nilable(Symbol)) }
       def aggregate_state_at(formula, hit)
-        results = hit.evidence.filter_map do |ev|
-          # Evidence built without a subject_version (distro queries, own-
-          # identity rows for a formula with no derivable tag) is deliberately
-          # uncheckable and must stay that way at historical revisions too;
-          # substituting the historical formula version would compare it
-          # against the distro record's distro-versioned range.
-          next if ev.subject_version.nil?
+        # Evidence built without a subject_version (distro queries, own-
+        # identity rows for a formula with no derivable tag) is deliberately
+        # uncheckable and must stay that way at historical revisions too;
+        # substituting the historical formula version would compare it
+        # against the distro record's distro-versioned range.
+        subjects = hit.evidence.reject { |ev| ev.subject_version.nil? }.group_by(&:resource)
+        results = subjects.flat_map do |_, evidence|
+          states = evidence.map do |ev|
+            present, subject = subject_version_at(formula, ev)
+            # Absence means this formula revision did not ship the vulnerable
+            # package. Treat it as fixed for boundary walking so a temporary
+            # removal can be the fix boundary while still allowing the walk to
+            # find an older affected revision.
+            next :absent unless present
+            next :unknown if subject.nil?
+            next :prerelease_boundary if evidence_prerelease_boundary?(ev, subject)
 
-          present, subject = subject_version_at(formula, ev)
-          # Absence means this formula revision did not ship the vulnerable
-          # package. Treat it as fixed for boundary walking so a temporary
-          # removal can be the fix boundary while still allowing the walk to
-          # find an older affected revision.
-          next :fixed unless present
-          next :unknown if subject.nil?
-          next :prerelease_boundary if evidence_prerelease_boundary?(ev, subject)
-
-          evidence_range_status(ev, subject)&.state || :unknown
+            evidence_range_status(ev, subject)&.state || :unknown
+          end
+          # As in `range_status`, a source that cannot be compared (such as a
+          # commit-only GIT range) does not hide a comparison of the same
+          # subject from another source. Other subjects still fail closed.
+          states -= [:unknown] if states.intersect?([:affected, :fixed, :not_applicable])
+          states.map { |state| (state == :absent) ? :fixed : state }
         end
         return if results.empty? || results.include?(:prerelease_boundary)
         return :affected if results.include?(:affected)
