@@ -183,6 +183,11 @@ class Build
 
           if fetch_phase?
             formula.with_logging("fetch") { formula.fetch }
+            if args.interactive?
+              ohai "Entering interactive fetch mode..."
+              puts "Type `exit` to continue to the offline build."
+              Utils::Shell.interactive(formula)
+            end
             if staging_path
               staging.quiet!
               staging.retain!

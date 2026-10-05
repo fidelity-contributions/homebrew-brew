@@ -1484,7 +1484,8 @@ upgrade *`formula`* if it is already installed but outdated.
 
 : Download and patch *`formula`*, then open a shell. This allows the user to run
   `./configure --help` and otherwise determine how to turn the software package
-  into a Homebrew package.
+  into a Homebrew package. If *`formula`* has a `fetch` block, first open a
+  shell with network access after it runs.
 
 `-g`, `--git`
 
@@ -1902,7 +1903,8 @@ for the reinstalled formulae and casks or, every 30 days, for all packages.
 
 : Download and patch *`formula`*, then open a shell. This allows the user to run
   `./configure --help` and otherwise determine how to turn the software package
-  into a Homebrew package.
+  into a Homebrew package. If *`formula`* has a `fetch` block, first open a
+  shell with network access after it runs.
 
 `--force-bottle`
 
@@ -2458,7 +2460,8 @@ for the upgraded formulae and casks or, every 30 days, for all packages.
 
 : Download and patch *`formula`*, then open a shell. This allows the user to run
   `./configure --help` and otherwise determine how to turn the software package
-  into a Homebrew package.
+  into a Homebrew package. If *`formula`* has a `fetch` block, first open a
+  shell with network access after it runs.
 
 `--force-bottle`
 

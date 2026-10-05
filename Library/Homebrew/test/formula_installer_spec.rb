@@ -208,7 +208,14 @@ RSpec.describe FormulaInstaller do
       installer.run_fetch
     end
 
-    it "uses the sandbox home in interactive mode" do
+    it "opens a shell with the sandbox home after fetching in interactive mode" do
+      shell = mktmpdir/"shell"
+      shell.write <<~SH
+        #!/bin/sh
+        printf '%s %s' "$(cat fetched)" "$HOME" > shell.out
+      SH
+      shell.chmod 0755
+      ENV["SHELL"] = shell.to_s
       ENV["HOMEBREW_NO_INSTALL_FROM_API"] = "1"
       installer = described_class.new(TestballFetch.new, interactive: true)
       staging_path = mktmpdir
@@ -216,8 +223,9 @@ RSpec.describe FormulaInstaller do
 
       installer.run_fetch(staging_path:)
 
-      fetched = staging_path.glob("**/fetched").fetch(0)
-      expect(fetched.read).to eq((fetched.dirname/".brew_home").to_s)
+      shell_out = staging_path.glob("**/shell.out").fetch(0)
+      home = shell_out.dirname/".brew_home"
+      expect(shell_out.read).to eq("#{home} #{home}")
     end
   end
 
