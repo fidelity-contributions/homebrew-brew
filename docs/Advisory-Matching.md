@@ -23,7 +23,8 @@ Reviewers must establish the ranges and matching provenance together from upstre
 
 For a new record, a `pkg_version` shared by affected and unaffected builds is conservatively included in the affected interval, because the advisory cannot distinguish those builds by version.
 This can happen when a resource changes without a formula revision bump.
-An affected build at or beyond the proposed fix, including a fix that shares its `pkg_version` with affected builds, or a distinct unaffected version inside the interval, still requires review.
+For the same reason, a fix that shares its `pkg_version` with affected builds is recorded at the next version with only fixed builds, and a range stays unchanged while the current version also has an affected build.
+A distinct unaffected version inside the interval still requires review.
 Existing-range reconciliation and reintroduction checks retain their stricter rules for mixed builds, so reconciliation reports a record whose `introduced` version has mixed builds as an unrepresentable interval and leaves it unchanged.
 
 Current-version prerelease ambiguity produces an uncomparable review lead with no `range_state`, reduced confidence and `database_specific.review_reason: "prerelease_boundary"`.

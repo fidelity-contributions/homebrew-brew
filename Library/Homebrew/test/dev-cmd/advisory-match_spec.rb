@@ -1468,6 +1468,30 @@ RSpec.describe Homebrew::DevCmd::AdvisoryMatch do
     end
   end
 
+  it "leaves an existing open range unchanged while the current version has an affected build" do
+    stub_osv_hit("CVE-2024-1234", fixed: "2.28.1")
+    matcher = Homebrew::Vulns::Match.new
+    expect(matcher).to receive(:first_fixed_version).and_return(:shared_fixed_version)
+    allow(Homebrew::Vulns::Match).to receive(:new).and_return(matcher)
+
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "BREW-requests-CVE-2024-1234.json")
+      existing = {
+        "id"                => "BREW-requests-CVE-2024-1234",
+        "affected"          => [{
+          "package" => { "ecosystem" => "Homebrew", "name" => "requests" },
+          "ranges"  => [{ "type" => "ECOSYSTEM", "events" => [{ "introduced" => "1.0" }] }],
+        }],
+        "database_specific" => { "source" => "matched" },
+      }
+      File.write(path, JSON.generate(existing))
+
+      expect { cmd_for("requests", "--output", dir, "--new-history").run }
+        .to output(/also has an affected build; skipping automatic update until a later version/).to_stderr
+      expect([JSON.parse(File.read(path)), Homebrew.failed?]).to eq [existing, false]
+    end
+  end
+
   it "rejects an unknown fixed-history result" do
     stub_osv_hit("CVE-2024-1234", fixed: "2.28.1")
     matcher = Homebrew::Vulns::Match.new
