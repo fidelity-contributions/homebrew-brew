@@ -338,20 +338,28 @@ Some advice for specific cases:
 * If the formula is for a GUI program, try to find some function that runs as command-line only, like a format conversion, reading or displaying a config file, etc.
 * If the software cannot function without credentials or requires a virtual machine, docker instance, etc. to run, a test could be to try to connect with invalid credentials (or without credentials) and confirm that it fails as expected. This is preferred over mocking a dependency.
 * Homebrew comes with a number of [standard test fixtures](https://github.com/Homebrew/brew/tree/HEAD/Library/Homebrew/test/support/fixtures), including numerous sample images, sounds and documents in various formats. You can get the file path to a test fixture with e.g. `test_fixtures("test.svg")`.
-* If your test requires a test file that isn't a standard test fixture, you can install it from a source repository during the `test` phase with a [`resource`](/rubydoc/Formula.html#resource-class_method) block, like this:
+* If your test requires a file that isn't a standard test fixture, declare a test-only [`resource`](/rubydoc/Formula.html#resource-class_method) outside the `test` block:
 
 ```ruby
-test do
-  resource "testdata" do
-    url "https://example.com/input.foo"
-    sha256 "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-  end
+resource "testdata", :test do
+  url "https://example.com/input.foo"
+  sha256 "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+end
 
+test do
   resource("testdata").stage do
     assert_match "OK", shell_output("#{bin}/foo build-foo input.foo")
   end
 end
 ```
+
+  `brew test` downloads test-only resources and their patches before starting the test sandbox, so they work with `deny_network_access! :test`, including during dependent testing.
+  Use `brew fetch --test <formula>` to download them alongside the formula's source or bottle.
+  `brew test-bot` fetches test resources alongside the tested formula's source or bottle so these downloads can run in parallel.
+  Ordinary source fetches and installations skip test-only resources.
+  Formulae that iterate over `resources` during installation must use `resources.reject(&:test?)` to exclude test fixtures.
+  `brew style --fix --only-cops=FormulaAuditStrict/TestResource <formula>` moves static resource declarations out of `test do` and adds `:test`; declarations using test-time values require manual migration.
+  This check runs during strict audits and is excluded from ordinary `brew style` checks.
 
 * If the binary only writes to `stderr`, you can redirect `stderr` to `stdout` for assertions with `shell_output`. For example:
 

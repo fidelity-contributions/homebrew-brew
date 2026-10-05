@@ -682,7 +682,7 @@ module Homebrew
           # Online checks are a bit flaky and less useful for PRs that modify multiple formulae.
           skip_online_checks = args.skip_online_checks? || (@testing_formulae_count > 5)
 
-          fetch_args = [formula_name]
+          fetch_args = [formula_name, "--test"]
           fetch_args << build_flag
           fetch_args << "--force" if cleanup?(args)
 

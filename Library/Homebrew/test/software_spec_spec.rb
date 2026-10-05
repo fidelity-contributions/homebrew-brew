@@ -12,6 +12,33 @@ RSpec.describe SoftwareSpec do
   alias_matcher :have_defined_option, :be_option_defined
 
   describe "#resource" do
+    it "defines a test-only resource" do
+      spec.resource("fixture", :test) do
+        T.bind(self, Resource)
+        url "https://brew.sh/fixture-1.0.tar.gz"
+      end
+
+      expect(spec.resource("fixture")).to be_test
+    end
+
+    it "does not mark ordinary resources as test-only" do
+      spec.resource("foo") do
+        T.bind(self, Resource)
+        url "foo-1.0"
+      end
+
+      expect(spec.resource("foo")).not_to be_test
+    end
+
+    it "rejects unknown resource types" do
+      expect do
+        spec.resource("fixture", :unknown) do
+          T.bind(self, Resource)
+          url "fixture-1.0"
+        end
+      end.to raise_error(ArgumentError, "Unknown resource type: :unknown")
+    end
+
     it "defines a resource" do
       spec.resource("foo") do
         T.bind(self, Resource)

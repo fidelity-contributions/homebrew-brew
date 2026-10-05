@@ -296,7 +296,7 @@ module Language
 
         venv = virtualenv_create(libexec, python.delete("@"), system_site_packages:,
                                                               without_pip:)
-        venv.pip_install venv_resources
+        venv.pip_install venv_resources.reject(&:test?)
         buildpath = self.buildpath
         raise "#{name}: `virtualenv_install_with_resources` can only be called from `install`" if buildpath.nil?
 

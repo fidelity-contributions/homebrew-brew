@@ -1,9 +1,43 @@
-# typed: strict
+# typed: true
 # frozen_string_literal: true
 
 require "test_bot"
+require "dev-cmd/test-bot"
 
 RSpec.describe Homebrew::TestBot::Formulae do
+  describe "#formula!" do
+    subject(:formulae) do
+      Class.new(described_class) do
+        T.bind(self, T.class_of(Homebrew::TestBot::Formulae))
+        public :formula!
+      end.new(
+        tap: nil, git: "git", dry_run: true, fail_fast: false, verbose: false,
+        output_paths: {
+          bottle:                     Pathname("bottle.txt"),
+          linkage:                    Pathname("linkage.txt"),
+          skipped_or_failed_formulae: Pathname("skipped.txt"),
+        }
+      )
+    end
+
+    it "includes test resources in the existing bottle-build fetch" do
+      foo = formula("foo") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/foo-1.0.tar.gz"
+      end
+      stub_formula_loader foo
+      allow(formulae).to receive_messages(bottled?: true, build_bottle?: true, cleanup?: false,
+                                          unsatisfied_requirements_messages: "Unavailable requirement")
+      allow(formulae).to receive(:annotate_added_dependencies)
+      allow(formulae).to receive(:install_ca_certificates_if_needed)
+      allow(formulae).to receive(:skipped)
+
+      formulae.formula!("foo", args: Homebrew::Cmd::TestBotCmd.new([]).args)
+
+      expect(formulae.steps.map(&:command)).to include(%w[brew fetch --formula --retry foo --test --build-bottle])
+    end
+  end
+
   describe "#dependency_name_match?" do
     it "requires exact matches when either name is tap-qualified", :aggregate_failures do
       Dir.mktmpdir do |tmpdir|

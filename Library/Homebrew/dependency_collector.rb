@@ -79,10 +79,10 @@ class DependencyCollector
   def cache_key(spec)
     if spec.is_a?(Resource)
       if spec.download_strategy <= CurlDownloadStrategy
-        return "#{spec.download_strategy}#{File.extname(resource_url(spec)).split("?").first}"
+        return "#{spec.download_strategy}#{File.extname(resource_url(spec)).split("?").first}#{spec.test?}"
       end
 
-      return spec.download_strategy
+      return [spec.download_strategy, spec.test?]
     end
     spec
   end
@@ -220,7 +220,8 @@ class DependencyCollector
 
   sig { params(spec: Resource, tags: T::Array[T.any(String, Symbol)]).returns(T.nilable(T.any(Dependency, T::Array[T.nilable(Dependency)]))) }
   def resource_dep(spec, tags)
-    tags << :build << :test
+    tags << :build unless spec.test?
+    tags << :test
     strategy = spec.download_strategy
     return if strategy.nil?
 

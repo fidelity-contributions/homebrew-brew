@@ -45,6 +45,19 @@ RSpec.describe Language::Python::Virtualenv, :needs_python do
 
     before { f.buildpath = buildpath }
 
+    it "does not install test-only resources" do
+      f.resource("fixture", :test) do
+        T.bind(self, Resource)
+        url "https://brew.sh/fixture.tar.gz"
+      end
+      allow(f).to receive(:virtualenv_create).and_return(venv)
+      allow(venv).to receive(:pip_install_and_link)
+
+      expect(venv).to receive(:pip_install).with([r_a, r_b, r_c, r_d])
+
+      f.virtualenv_install_with_resources(using: "python")
+    end
+
     it "works with `using: \"python\"` and installs resources in order" do
       expect(f).to receive(:virtualenv_create).with(
         f.libexec, "python", { system_site_packages: true, without_pip: true }

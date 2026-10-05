@@ -44,12 +44,13 @@ class Resource
   sig { returns(T.nilable(String)) }
   attr_accessor :name
 
-  sig { params(name: T.nilable(String), block: T.nilable(T.proc.bind(Resource).void)).void }
-  def initialize(name = nil, &block)
+  sig { params(name: T.nilable(String), test: T::Boolean, block: T.nilable(T.proc.bind(Resource).void)).void }
+  def initialize(name = nil, test: false, &block)
     super()
     # Generally ensure this is synced with `initialize_dup` and `freeze`
     # (excluding simple objects like integers & booleans, weak refs like `owner` or permafrozen objects)
     @name = name
+    @test = test
     @source_modified_time = T.let(nil, T.nilable(Time))
     @patches = T.let([], T::Array[T.any(EmbeddedPatch, ExternalPatch)])
     @owner = T.let(nil, T.nilable(Owner))
@@ -58,6 +59,12 @@ class Resource
     @insecure = T.let(false, T::Boolean)
     instance_eval(&block) if block
   end
+
+  # Whether this resource is only needed for formula tests.
+  #
+  # @api public
+  sig { returns(T::Boolean) }
+  def test? = @test
 
   sig { override.params(other: T.any(Resource, Downloadable)).void }
   def initialize_dup(other)
