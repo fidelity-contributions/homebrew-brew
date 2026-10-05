@@ -3682,7 +3682,7 @@ RSpec.describe Formula do
     let(:f) do
       formula do
         T.bind(self, T.class_of(Formula))
-        url "foo-1.0"
+        url "https://brew.sh/foo-1.0.tar.gz"
       end
     end
 
@@ -3719,7 +3719,10 @@ RSpec.describe Formula do
           "-X 'main.builtBy=#{built_by}'"
       end
 
-      before { allow(f).to receive(:time).and_return(Time.parse(date)) }
+      before do
+        allow(f).to receive_messages(time: Time.parse(date), cached_download: Pathname("/tmp/foo-1.0.tar.gz"))
+        allow(Utils::Git).to receive(:get_tar_commit_id).and_return(nil)
+      end
 
       context "when url has a git revision" do
         let(:commit) { "f5e00e485e7aa4c5baa20355b27e3b84a6912790" }
@@ -3731,6 +3734,10 @@ RSpec.describe Formula do
           end
         end
 
+        before do
+          allow(f).to receive(:cached_download).and_return(Pathname("/tmp/foo--git"))
+        end
+
         it "uses it for main.commit" do
           expect(std_go_args).to include("-ldflags=#{expected_ldflags}")
         end
@@ -3738,15 +3745,9 @@ RSpec.describe Formula do
 
       context "when url is tarball with extractable commit" do
         let(:commit) { "f5e00e485e7aa4c5baa20355b27e3b84a6912790" }
-        let(:f) do
-          formula do
-            T.bind(self, T.class_of(Formula))
-            url "https://brew.sh/foo-1.0.tar.gz"
-          end
-        end
 
         before do
-          allow(Utils::Git).to receive(:get_tar_commit_id).and_return(commit)
+          allow(Utils::Git).to receive(:get_tar_commit_id).with(Pathname("/tmp/foo-1.0.tar.gz")).and_return(commit)
         end
 
         it "uses it for main.commit" do
@@ -3759,7 +3760,7 @@ RSpec.describe Formula do
         let(:commit) { Utils.popen_read("git", "-C", buildpath, "rev-parse", "HEAD").chomp }
 
         before do
-          allow(f).to receive(:buildpath).and_return(buildpath)
+          allow(f).to receive_messages(buildpath: buildpath, cached_download: Pathname("/tmp/foo--git"))
 
           buildpath.cd do
             FileUtils.touch "LICENSE"
