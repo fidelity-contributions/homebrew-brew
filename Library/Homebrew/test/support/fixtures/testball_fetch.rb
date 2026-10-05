@@ -12,7 +12,7 @@ class TestballFetch < Testball
   end
 
   def fetch
-    Pathname("fetched").write ENV.fetch("GOPATH")
+    Pathname("fetched").write Dir.home
   end
 
   def install
