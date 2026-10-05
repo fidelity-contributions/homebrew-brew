@@ -2295,11 +2295,8 @@ RSpec.describe Homebrew::Vulns::Match do
       expect(matcher.first_fixed_version(requests, hit_fixed_at("2.28.1"))).to eq :history_unavailable
     end
 
-    it "does not let fixed evidence mask another uncheckable historical subject" do
-      previous = formula("requests") do
-        T.bind(self, T.class_of(Formula))
-        url "https://files.pythonhosted.org/packages/aa/bb/cc/requests-2.30.0.tar.gz"
-      end
+    it "ignores an uncomparable source when another source compares the same subject" do
+      stub_history(["2.31.0", "2.30.0", "2.28.1", "2.28.0"])
       hit = make_hit(
         vuln("id" => "CVE-1", "affected" => [
           { "package" => { "ecosystem" => "PyPI", "name" => "requests" },
@@ -2311,6 +2308,30 @@ RSpec.describe Homebrew::Vulns::Match do
         ]),
         ev(:registry, ecosystem: "PyPI", name: "requests", subject_version: "2.31.0"),
         ev(:git, ecosystem: "GIT", name: "https://github.com/psf/requests", subject_version: "e" * 40),
+      )
+
+      expect(matcher.first_fixed_version(requests, hit)).to eq "2.28.1"
+    end
+
+    it "does not let fixed evidence mask another uncheckable historical subject" do
+      previous = formula("requests") do
+        T.bind(self, T.class_of(Formula))
+        url "https://files.pythonhosted.org/packages/aa/bb/cc/requests-2.30.0.tar.gz"
+        resource "certifi" do
+          url "https://example.test/downloads/certifi-2024.2.2.tar.gz"
+        end
+      end
+      hit = make_hit(
+        vuln("id" => "CVE-1", "affected" => [
+          { "package" => { "ecosystem" => "PyPI", "name" => "requests" },
+            "ranges"  => [{ "type"   => "ECOSYSTEM",
+                            "events" => [{ "introduced" => "0" }, { "fixed" => "2.28.1" }] }] },
+          { "package" => { "ecosystem" => "PyPI", "name" => "certifi" },
+            "ranges"  => [{ "type"   => "ECOSYSTEM",
+                            "events" => [{ "introduced" => "0" }, { "fixed" => "2024.1.0" }] }] },
+        ]),
+        ev(:registry, ecosystem: "PyPI", name: "requests", subject_version: "2.31.0"),
+        ev(:registry, ecosystem: "PyPI", name: "certifi", subject_version: "2024.2.2", resource: "certifi"),
       )
 
       expect(matcher.aggregate_state_at(previous, hit)).to be_nil
