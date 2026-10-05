@@ -294,7 +294,7 @@ module OS
 
           Alternatively, manually download them from:
             #{Formatter.url(MacOS::Xcode::APPLE_DEVELOPER_DOWNLOAD_URL)}.
-          You should download the Command Line Tools for Xcode #{MacOS::Xcode.latest_version}.
+          You should download the Command Line Tools for Xcode #{latest_version}.
         EOS
       end
 
@@ -323,6 +323,20 @@ module OS
 
       # Bump these when the new version is distributed through Software Update
       # and our CI systems have been updated.
+      #
+      # CLT releases can differ from Xcode, so override mismatches and
+      # share Xcode's latest version otherwise.
+      sig { returns(String) }
+      def self.latest_version
+        return "27.0" if MacOS.version == "26" && ::Hardware::CPU.physical_cpu_arm64?
+
+        case MacOS.version
+        when "13" then "15.1"
+        when "11" then "13.2"
+        else           MacOS::Xcode.latest_version
+        end
+      end
+
       sig { returns(String) }
       def self.latest_clang_version
         case MacOS.version

@@ -5,12 +5,11 @@ require "os/mac/xcode"
 
 RSpec.describe OS::Mac::Xcode, :needs_macos do
   describe ".latest_version" do
-    it "returns the Xcode version for Golden Gate" do
-      expect(described_class.latest_version(macos: MacOSVersion.new("27"))).to eq("27.0")
-    end
-
-    it "returns Xcode 26.6 for Tahoe" do
-      expect(described_class.latest_version(macos: MacOSVersion.new("26"))).to eq("26.6")
+    test_each_hash({ "27" => "27.0", "26" => "26.6", "15" => "26.3", "14" => "16.2",
+                    "13" => "15.2", "12" => "14.2", "11" => "13.2.1" }) do |macos, xcode|
+      it "recommends Xcode #{xcode} on macOS #{macos}" do
+        expect(described_class.latest_version(macos: MacOSVersion.new(macos))).to eq(xcode)
+      end
     end
   end
 
@@ -49,6 +48,34 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
   end
 
   describe OS::Mac::CLT do
+    describe ".latest_version" do
+      test_each_hash({ "27" => "27.0", "26" => "27.0", "15" => "26.3", "14" => "16.2",
+                      "13" => "15.1", "12" => "14.2", "11" => "13.2" }) do |macos, clt|
+        it "recommends Command Line Tools #{clt} on macOS #{macos}" do
+          allow(OS::Mac).to receive(:version).and_return(MacOSVersion.new(macos))
+          allow(Hardware::CPU).to receive(:physical_cpu_arm64?).and_return(true)
+
+          expect(described_class.latest_version).to eq(clt)
+        end
+      end
+
+      it "follows Xcode updates on Intel Tahoe" do
+        allow(OS::Mac).to receive(:version).and_return(MacOSVersion.new("26"))
+        allow(Hardware::CPU).to receive(:physical_cpu_arm64?).and_return(false)
+        allow(OS::Mac::Xcode).to receive(:latest_version).and_return("26.7")
+
+        expect(described_class.latest_version).to eq("26.7")
+      end
+    end
+
+    describe ".reinstall_instructions" do
+      it "recommends a released Command Line Tools version on Ventura" do
+        allow(OS::Mac).to receive(:version).and_return(MacOSVersion.new("13"))
+
+        expect(described_class.reinstall_instructions).to include("Command Line Tools for Xcode 15.1.\n")
+      end
+    end
+
     describe ".latest_clang_version" do
       test_each(%w[27 26]) do |macos|
         it "recommends the Xcode 27 compiler on macOS #{macos}" do
