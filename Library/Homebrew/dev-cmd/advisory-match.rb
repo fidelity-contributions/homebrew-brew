@@ -183,6 +183,11 @@ module Homebrew
                     emitter.record_history_unavailable(formula.name)
                     opoo "#{record_id}: formula history is unavailable; skipping automatic update"
                     next
+                  when :shared_fixed_version
+                    emitter.record_history_unavailable(formula.name)
+                    opoo "#{record_id}: #{formula.pkg_version} also has an affected build; " \
+                         "skipping automatic update until a later version"
+                    next
                   else
                     raise TypeError, "unexpected fixed-history result: #{first_fixed.inspect}"
                   end

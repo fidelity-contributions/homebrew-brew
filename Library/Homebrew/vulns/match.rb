@@ -816,20 +816,37 @@ module Homebrew
       #   candidate rather than emitting `{introduced: "0", fixed: <first>}`.
       # - `:history_unavailable` when the tap is a shallow clone, the formula
       #   has no git history or a revision cannot be loaded or compared, so the
-      #   caller can skip the candidate rather than inventing a boundary.
-      # - a `pkg_version` String when the walk hits `:affected`.
+      #   caller can skip the candidate rather than inventing a boundary. This
+      #   includes a version that moved backwards, leaving no later fixed
+      #   version above the affected one.
+      # - `:shared_fixed_version` when the current `pkg_version` also has an
+      #   affected build, so no released version is fixed yet.
+      # - a `pkg_version` String when the walk hits `:affected`. A fix that
+      #   changed a resource without a revision bump shares its version with
+      #   affected builds, which the version cannot distinguish, so the boundary
+      #   is the next version with only fixed builds.
       sig { params(formula: Formula, hit: Hit).returns(T.nilable(T.any(String, Symbol))) }
       def first_fixed_version(formula, hit)
         return unless range_status(hit, formula_name: formula.name)&.first&.fixed?
 
-        last_fixed = T.let(formula.pkg_version.to_s, String)
+        fixed_versions = T.let([formula.pkg_version], T::Array[PkgVersion])
         result = @history.walk(formula) do |old|
           aggregate = aggregate_state_at(old, hit)
+          version = old.pkg_version
           case aggregate
           when :fixed
-            last_fixed = old.pkg_version.to_s
+            fixed_versions << version if fixed_versions.last != version
             nil
-          when :affected then last_fixed
+          when :affected
+            later = fixed_versions.take_while { |fixed| fixed != version }
+            boundary = later.last
+            if boundary.nil?
+              :shared_fixed_version
+            elsif boundary > version
+              boundary.to_s
+            else
+              :history_unavailable
+            end
           when :not_applicable then :never_affected
           when nil then :history_unavailable
           else raise TypeError, "unexpected historical aggregate: #{aggregate.inspect}"

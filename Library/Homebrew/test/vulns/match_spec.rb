@@ -1818,12 +1818,30 @@ RSpec.describe Homebrew::Vulns::Match do
             .to eq :history_unavailable
         end
 
-        it "still holds a fix that shares a label with affected builds" do
+        it "moves a fix that shares a label with affected builds to the next version" do
           stub_history([["2.31.0", "1.2"], ["2.30.0", "1.2"], ["2.30.0", "1.1"], ["2.29.0", "0.9"]])
           first_fixed = matcher.first_fixed_version(requests, hit)
 
-          expect(first_fixed).to eq "2.30.0"
-          expect(matcher.first_introduced_version(requests, hit, first_fixed:)).to eq :history_unavailable
+          expect(first_fixed).to eq "2.31.0"
+          expect(matcher.first_introduced_version(requests, hit, first_fixed:)).to eq "2.30.0"
+        end
+
+        it "holds a fix while the current version also has an affected build" do
+          stub_history([["2.31.0", "1.2"], ["2.31.0", "1.1"], ["2.30.0", "1.1"]])
+
+          expect(matcher.first_fixed_version(requests, hit)).to eq :shared_fixed_version
+        end
+
+        it "holds a fix whose version had an affected build before moving backwards" do
+          stub_history([["2.31.0", "1.2"], ["2.0", "1.2"], ["2.31.0", "1.1"]])
+
+          expect(matcher.first_fixed_version(requests, hit)).to eq :shared_fixed_version
+        end
+
+        it "does not close a range below an affected version that moved backwards" do
+          stub_history([["2.31.0", "1.2"], ["2.0", "1.2"], ["2.5", "1.1"]])
+
+          expect(matcher.first_fixed_version(requests, hit)).to eq :history_unavailable
         end
 
         it "still holds a distinct unaffected label between affected runs" do
