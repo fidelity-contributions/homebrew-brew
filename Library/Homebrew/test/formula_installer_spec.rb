@@ -207,6 +207,18 @@ RSpec.describe FormulaInstaller do
 
       installer.run_fetch
     end
+
+    it "uses the package manager caches in interactive mode" do
+      ENV["HOMEBREW_NO_INSTALL_FROM_API"] = "1"
+      installer = described_class.new(TestballFetch.new, interactive: true)
+      staging_path = mktmpdir
+      installer.fetch
+
+      installer.run_fetch(staging_path:)
+
+      expect(staging_path.glob("**/fetched").map(&:read))
+        .to eq([Homebrew::PackageManagerCache.path("go_mod_cache").to_s])
+    end
   end
 
   describe "#post_install" do
