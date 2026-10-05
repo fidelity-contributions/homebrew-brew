@@ -1664,6 +1664,30 @@ RSpec.describe Homebrew::Cmd::Info do
         .and not_to_output.to_stderr
     end
 
+    it "shows the Cellar path of every keg with --verbose" do
+      info = described_class.new(["--verbose"])
+      main_formula = formula("testball") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/testball-1.0.tar.gz"
+      end
+
+      ["0.9", "1.0"].each { |version| (HOMEBREW_CELLAR/"testball/#{version}").mkpath }
+
+      allow(main_formula).to receive(:versioned_formulae).and_return([])
+      allow(info).to receive(:github_info).with(main_formula).and_return("https://example.com/testball.rb")
+
+      expect { info.info_formula(main_formula) }
+        .to output(Regexp.new(
+                     ".*testball\\b.*\\s+1\\.0\\s+\\(.*\\)\n  " \
+                     "Cellar: #{Regexp.escape((HOMEBREW_CELLAR/"testball/1.0").to_s)}\n  " \
+                     "Built from source\n" \
+                     ".*testball\\b.*\\s+0\\.9\\s+\\(.*\\)\n  " \
+                     "Cellar: #{Regexp.escape((HOMEBREW_CELLAR/"testball/0.9").to_s)}\n  " \
+                     "Built from source\n",
+                   )).to_stdout
+        .and not_to_output.to_stderr
+    end
+
     it "omits the section when nothing in the family is installed" do
       info = described_class.new([])
       main_formula = formula("testball") do

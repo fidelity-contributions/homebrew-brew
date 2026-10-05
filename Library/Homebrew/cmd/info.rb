@@ -843,8 +843,10 @@ module Homebrew
                  "#{" #{linked_marker}" unless linked_marker.empty?}"
           next [line] unless verbose
 
+          lines = [line, "  Cellar: #{keg}"]
           tab_string = keg.tab.to_s
-          tab_string.empty? ? [line] : [line, "  #{tab_string}"]
+          lines << "  #{tab_string}" unless tab_string.empty?
+          lines
         end
       end
 
