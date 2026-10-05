@@ -110,6 +110,39 @@ RSpec.describe Utils::Git do
     end
   end
 
+  describe "::get_tar_commit_id" do
+    subject { described_class.get_tar_commit_id(archive) }
+
+    let(:archive) { mktmpdir/"test.tar" }
+    let(:commit) { HOMEBREW_CACHE.cd { Utils.popen_read("git", "rev-parse", "HEAD", err: :err).chomp } }
+
+    context "when given a git archive tarball" do
+      before do
+        system HOMEBREW_SHIMS_PATH/"shared/git", "-C", HOMEBREW_CACHE, "archive", "-o", archive, commit
+      end
+
+      it { is_expected.to eq commit }
+
+      context "with gzip-compression" do
+        let(:archive) { mktmpdir/"test.tar.gz" }
+
+        it { is_expected.to eq commit }
+      end
+    end
+
+    context "when input is a manual tarball" do
+      before do
+        system "tar", "--create", "--file", archive, "--directory", HOMEBREW_CACHE, "."
+      end
+
+      it { is_expected.to be_nil }
+    end
+
+    context "when input doesn't exist" do
+      it { is_expected.to be_nil }
+    end
+  end
+
   describe "#last_revision_commit_of_files" do
     context "when before_commit is nil" do
       it "gives last revision commit" do

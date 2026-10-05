@@ -2289,12 +2289,18 @@ class Formula
   def std_go_args(output: bin/name, ldflags: nil, gcflags: nil, tags: nil)
     case ldflags
     when :goreleaser
-      # If building from a git archive, we use the tap owner as a placeholder.
-      # This can help upstream identify the exact code that was used in binary.
       built_by = tap&.user || "Homebrew"
-      repo = buildpath
-      commit = Utils.git_head(repo, safe: false) if repo
+      commit = if (revision = active_spec.specs[:revision])
+        revision
+      elsif cached_download.basename.to_s.end_with?(".tar", ".tar.gz", ".tgz")
+        Utils::Git.get_tar_commit_id(cached_download)
+      elsif (repo = buildpath)
+        Utils.git_head(repo, safe: false)
+      end
+      # If unable to find a commit, we use the tap owner as a placeholder.
+      # This can help upstream identify the exact code that was used in binary.
       commit ||= built_by
+
       ldflags = %W[
         -X 'main.version=#{version}'
         -X 'main.commit=#{commit}'
