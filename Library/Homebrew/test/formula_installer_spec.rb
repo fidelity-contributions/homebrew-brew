@@ -761,15 +761,19 @@ RSpec.describe FormulaInstaller do
   end
 
   describe "#install_dependency" do
-    it "reports an outdated dependency as upgrading" do
-      dependency_formula = formula "outdated-dependency" do
+    let(:dependency_formula) do
+      formula "outdated-dependency" do
         T.bind(self, T.class_of(Formula))
         url "foo-1.0"
       end
-      dependency = instance_double(Dependency, to_formula: dependency_formula, name: dependency_formula.name,
-                                               options: Options.new)
-      installer = described_class.new(Testball.new)
+    end
+    let(:dependency) do
+      instance_double(Dependency, to_formula: dependency_formula, name: dependency_formula.name,
+                                  options: Options.new)
+    end
+    let(:installer) { described_class.new(Testball.new) }
 
+    before do
       allow(dependency_formula).to receive_messages(
         linked_keg:                Pathname("/tmp/nonexistent-linked-keg"),
         latest_version_installed?: false,
@@ -777,8 +781,6 @@ RSpec.describe FormulaInstaller do
         any_version_installed?:    true,
         outdated?:                 true,
       )
-      expect(installer).to receive(:oh1)
-        .with("Upgrading testball dependency: #{Formatter.identifier(dependency_formula.name)}")
       allow(described_class).to receive(:new).and_wrap_original do |original, formula, **kwargs|
         instance = original.call(formula, **kwargs)
         next instance if formula != dependency_formula
@@ -786,6 +788,41 @@ RSpec.describe FormulaInstaller do
         allow(instance).to receive_messages(prelude: true, install: true, finish: true)
         instance
       end
+    end
+
+    it "reports an outdated dependency as upgrading" do
+      expect(installer).to receive(:oh1)
+        .with("Upgrading testball dependency: #{Formatter.identifier(dependency_formula.name)} (1.0)")
+
+      installer.install_dependency(dependency)
+    end
+
+    it "reports the version an outdated dependency is upgraded from" do
+      old_keg = HOMEBREW_CELLAR/"outdated-dependency/0.9"
+      old_keg.mkpath
+      allow(dependency_formula).to receive_messages(optlinked?: true, opt_prefix: old_keg)
+
+      expect(installer).to receive(:oh1)
+        .with("Upgrading testball dependency: #{Formatter.identifier(dependency_formula.name)} (0.9 -> 1.0)")
+
+      installer.install_dependency(dependency)
+    end
+
+    it "reads the old version before moving the installed latest keg aside" do
+      dependency_formula.prefix.mkpath
+      dependency_formula.opt_prefix.parent.mkpath
+      dependency_formula.opt_prefix.make_symlink(dependency_formula.prefix)
+      allow(dependency_formula).to receive(:latest_version_installed?).and_return(true)
+      allow(installer).to receive(:oh1)
+
+      expect { installer.install_dependency(dependency) }.not_to raise_error
+    end
+
+    it "reports the version a new dependency is installed at" do
+      allow(dependency_formula).to receive(:outdated?).and_return(false)
+
+      expect(installer).to receive(:oh1)
+        .with("Installing testball dependency: #{Formatter.identifier(dependency_formula.name)} (1.0)")
 
       installer.install_dependency(dependency)
     end
