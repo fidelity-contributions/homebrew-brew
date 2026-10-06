@@ -154,7 +154,7 @@ class Build
         fetch:         false,
         keep_tmp:      args.keep_tmp?,
         debug_symbols: args.debug_symbols?,
-        interactive:   args.interactive?,
+        interactive:   args.interactive? && !fetch_phase?,
         staging_path:,
         staged:,
       ) do |_formula, staging|

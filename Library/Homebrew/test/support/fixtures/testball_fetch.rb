@@ -12,7 +12,7 @@ class TestballFetch < Testball
   end
 
   def fetch
-    Pathname("fetched").write "fetched"
+    Pathname("fetched").write Dir.home
   end
 
   def install
