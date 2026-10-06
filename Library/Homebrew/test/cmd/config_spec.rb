@@ -51,6 +51,17 @@ RSpec.describe Homebrew::Cmd::Config do
     ])
   end
 
+  it "prints an unknown Command Line Tools version", :needs_macos do
+    output = StringIO.new
+
+    allow(OS::Mac::CLT).to receive_messages(installed?: true, version: Version::NULL)
+    allow(SystemConfig).to receive(:config_sections).and_return([:macos_config])
+
+    SystemConfig.dump_verbose_config(output)
+
+    expect(output.string).to include("CLT: unknown\n")
+  end
+
   it "reads the Windows version on WSL", :needs_linux do
     allow(OS).to receive(:wsl?).and_return(true)
     stub_const("ORIGINAL_PATHS", [windows_cmd.dirname])

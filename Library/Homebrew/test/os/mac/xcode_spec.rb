@@ -40,18 +40,11 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
   end
 
   describe ".detect_version" do
-    test_each_hash({ "2100.0.123.102" => "26.4.1", "2100.1.1.101" => "26.6",
-                    "2100.3.34.2" => "27.0" }) do |build, xcode|
-      it "infers Xcode #{xcode} from the clang-#{build} Command Line Tools compiler" do
-        allow(described_class).to receive_messages(installed?: false, prefix: nil)
-        allow(OS::Mac::CLT).to receive(:installed?).and_return(true)
-        allow(DevelopmentTools).to receive_messages(
-          clang_version:        Version.new("21.0.0"),
-          clang_version_output: "Apple clang version 21.0.0 (clang-#{build})\n",
-        )
+    it "does not infer a version from the Command Line Tools" do
+      allow(described_class).to receive_messages(installed?: false, prefix: nil)
+      allow(OS::Mac::CLT).to receive(:installed?).and_return(true)
 
-        expect(described_class.detect_version).to eq(xcode)
-      end
+      expect(described_class.detect_version).to be_nil
     end
 
     it "loads Plist when version.plist exists" do
@@ -70,12 +63,6 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
       allow(OS::Mac::CLT).to receive(:installed?).and_return(false)
 
       expect(described_class.detect_version).to eq("26.3")
-    end
-  end
-
-  describe ".detect_version_from_clang_version" do
-    it "preserves Xcode 26.3 for clang 17" do
-      expect(described_class.detect_version_from_clang_version(Version.new("17.0.0"))).to eq("26.3")
     end
   end
 
@@ -152,11 +139,30 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
       end
     end
 
-    describe ".detect_version_from_clang_version" do
-      it "infers Xcode 26.6 from the Command Line Tools 26.6 compiler" do
-        allow(described_class).to receive(:detect_clang_version).and_return("2100.1.1.101")
+    describe ".installed?" do
+      it "detects Command Line Tools without a package receipt" do
+        allow(File).to receive(:exist?).and_call_original
+        allow(File).to receive(:exist?).with("#{OS::Mac::CLT::PKG_PATH}/usr/bin/clang").and_return(true)
+        allow(MacOS).to receive(:pkgutil_info).and_return("")
 
-        expect(described_class.detect_version_from_clang_version).to eq("26.6")
+        expect(described_class.installed?).to be true
+      end
+    end
+
+    describe ".detect_version" do
+      it "leaves the version unknown without a package receipt" do
+        allow(described_class).to receive(:installed?).and_return(true)
+        allow(MacOS).to receive(:pkgutil_info).and_return("")
+
+        expect(described_class.detect_version).to be_nil
+      end
+    end
+
+    describe ".below_minimum_version?" do
+      it "does not treat an unknown version as below the minimum" do
+        allow(described_class).to receive_messages(installed?: true, version: Version::NULL)
+
+        expect(described_class.below_minimum_version?).to be false
       end
     end
 

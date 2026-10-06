@@ -333,7 +333,7 @@ HOMEBREW_BOTTLE_DEFAULT_DOMAIN="https://ghcr.io/v2/homebrew/core"
 # - https://github.com/Homebrew/install/blob/HEAD/install.sh
 # - Library/Homebrew/os/mac.rb (latest_sdk_version)
 # - Library/Homebrew/os/mac/xcode.rb (latest_version), (minimum_version)
-# - Library/Homebrew/os/mac/xcode.rb (detect_version_from_clang_version), (latest_clang_version)
+# - Library/Homebrew/os/mac/xcode.rb (latest_clang_version)
 # and, if needed:
 # - MacOSVersion::RELEASES
 HOMEBREW_MACOS_NEWEST_UNSUPPORTED="28"

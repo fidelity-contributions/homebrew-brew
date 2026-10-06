@@ -15,7 +15,7 @@ module OS
         def initialize
           super
           @xcode = T.let(nil, T.nilable(String))
-          @clt = T.let(nil, T.nilable(Version))
+          @clt = T.let(nil, T.nilable(String))
         end
 
         sig { returns(String) }
@@ -35,9 +35,11 @@ module OS
           end
         end
 
-        sig { returns(T.nilable(Version)) }
+        sig { returns(T.nilable(String)) }
         def clt
-          @clt ||= MacOS::CLT.version if MacOS::CLT.installed?
+          @clt ||= if MacOS::CLT.installed?
+            MacOS::CLT.version.to_s.presence || "unknown"
+          end
         end
 
         sig { returns(T.nilable(String)) }

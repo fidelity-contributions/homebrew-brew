@@ -170,9 +170,6 @@ module OS
       # @api internal
       sig { returns(::Version) }
       def self.version
-        # may return a version string
-        # that is guessed based on the compiler, so do not
-        # use it in order to check if Xcode is installed.
         if @version ||= T.let(detect_version, T.nilable(String))
           ::Version.new @version
         else
@@ -184,8 +181,6 @@ module OS
       def self.detect_version
         # This is a separate function as you can't cache the value out of a block
         # if return is used in the middle, which we do many times in here.
-        return if !MacOS::Xcode.installed? && !MacOS::CLT.installed?
-
         if (xcode_prefix = prefix)
           # Fast path that will probably almost always work unless `xcode-select -p` is misconfigured
           version_plist = xcode_prefix.parent/"version.plist"
@@ -210,40 +205,7 @@ module OS
           end
         end
 
-        detect_version_from_clang_version
-      end
-
-      sig { params(version: ::Version, build: T.nilable(String)).returns(String) }
-      def self.detect_version_from_clang_version(
-        version = ::DevelopmentTools.clang_version,
-        build = ::DevelopmentTools.clang_version_output&.[](/clang-(\d+(?:\.\d+)+)/, 1)
-      )
-        return "dunno" if version.null?
-
-        # This logic provides a fake Xcode version based on the
-        # installed CLT version. This is useful as they are packaged
-        # simultaneously so workarounds need to apply to both based on their
-        # comparable version.
-        case version
-        when "11.0.0" then "11.3.1"
-        when "11.0.3" then "11.7"
-        when "12.0.0" then "12.4"
-        when "12.0.5" then "12.5.1"
-        when "13.0.0" then "13.2.1"
-        when "13.1.6" then "13.4.1"
-        when "14.0.0" then "14.2"
-        when "14.0.3" then "14.3.1"
-        when "15.0.0" then "15.4"
-        when "16.0.0" then "16.2"
-        when "17.0.0" then "26.3"
-        else
-          # Xcode 26.4 onwards ship clang 21.0.0 so map the full build to the newest matching Xcode.
-          case build
-          when /\A2100\.0\./ then "26.4.1"
-          when /\A2100\.1\./ then "26.6"
-          else                    "27.0"
-          end
-        end
+        nil
       end
 
       sig { returns(T::Boolean) }
@@ -262,7 +224,7 @@ module OS
       # Returns true even if outdated tools are installed.
       sig { returns(T::Boolean) }
       def self.installed?
-        !version.null?
+        File.exist?("#{PKG_PATH}/usr/bin/clang")
       end
 
       sig { returns(CLTSDKLocator) }
@@ -377,7 +339,7 @@ module OS
 
       sig { returns(T::Boolean) }
       def self.below_minimum_version?
-        return false unless installed?
+        return false if version.null?
 
         version < minimum_version
       end
@@ -396,18 +358,10 @@ module OS
         version_output[/clang-(\d+(?:\.\d+)+)/, 1]
       end
 
-      sig { returns(T.nilable(String)) }
-      def self.detect_version_from_clang_version
-        clang_build = detect_clang_version
-        return if clang_build.nil?
-
-        clang_version = clang_build.sub(/\A(\d+)(\d)(\d)\..*/, "\\1.\\2.\\3")
-        MacOS::Xcode.detect_version_from_clang_version(Version.new(clang_version), clang_build)
-      end
-
       # Version string (a pretty long one) of the CLT package.
       # Note that the different ways of installing the CLTs lead to different
-      # version numbers.
+      # version numbers. Installations without a package receipt have an
+      # unknown version (`Version::NULL`).
       #
       # @api internal
       sig { returns(::Version) }
@@ -421,13 +375,9 @@ module OS
 
       sig { returns(T.nilable(String)) }
       def self.detect_version
-        version = T.let(nil, T.nilable(String))
-        if File.exist?("#{PKG_PATH}/usr/bin/clang")
-          version = MacOS.pkgutil_info(EXECUTABLE_PKG_ID)[/version: (.+)$/, 1]
-          return version if version
-        end
+        return unless installed?
 
-        detect_version_from_clang_version
+        MacOS.pkgutil_info(EXECUTABLE_PKG_ID)[/version: (.+)$/, 1]
       end
     end
   end
