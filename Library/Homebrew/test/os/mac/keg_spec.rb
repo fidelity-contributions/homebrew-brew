@@ -132,6 +132,18 @@ RSpec.describe Keg do
       keg.relocate_dynamic_linkage(relocation)
     end
 
+    it "codesigns saved files when relocating a later file fails" do
+      failed_file = MachOPathname.wrap(keg_path/"bin/failed")
+      allow(Utils::Path).to receive(:ensure_writable).with(failed_file.to_path).and_yield
+      allow(failed_file).to receive_messages(dylib?: true, dylib_id: "#{HOMEBREW_PREFIX}/lib/foo")
+      allow(keg).to receive(:mach_o_files).and_return([file, failed_file])
+      allow(keg).to receive(:change_dylib_id).with(anything, failed_file, write: false)
+                                             .and_raise(MachO::HeaderPadError.new(failed_file.to_s))
+
+      expect(keg).to receive(:codesign_patched_binaries).with([keg_path/"bin/test"])
+      expect { keg.relocate_dynamic_linkage(relocation) }.to raise_error(MachO::HeaderPadError)
+    end
+
     it "relocates only recorded linkage files without walking the keg" do
       allow(MachOPathname).to receive(:wrap).and_return(file)
       expect(keg).not_to receive(:mach_o_files)
@@ -162,6 +174,18 @@ RSpec.describe Keg do
       expect(keg).to receive(:codesign_patched_binaries).with([file])
 
       keg.fix_dynamic_linkage
+    end
+
+    it "codesigns saved files when fixing a later file fails" do
+      failed_file = MachOPathname.wrap(keg_path/"bin/failed")
+      allow(Utils::Path).to receive(:ensure_writable).with(failed_file.to_path).and_yield
+      allow(failed_file).to receive_messages(dylib?: true, dylib_id: "@rpath/foo")
+      allow(keg).to receive(:mach_o_files).and_return([file, failed_file])
+      allow(keg).to receive(:change_dylib_id).with(anything, failed_file, write: false)
+                                             .and_raise(MachO::HeaderPadError.new(failed_file.to_s))
+
+      expect(keg).to receive(:codesign_patched_binaries).with([file])
+      expect { keg.fix_dynamic_linkage }.to raise_error(MachO::HeaderPadError)
     end
   end
 
