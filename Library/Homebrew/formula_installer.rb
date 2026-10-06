@@ -889,6 +889,9 @@ on_request: installed_on_request?, options:)
 
   sig { params(dep: Dependency, dep_formula: Formula).void }
   def install_dependency(dep, dep_formula = dep.to_formula)
+    upgrading = dep_formula.outdated?
+    upgrade_from = "#{Keg.new(dep_formula.opt_prefix).version} -> " if upgrading && dep_formula.optlinked?
+
     if dep_formula.linked_keg.directory?
       linked_keg = Keg.new(resolved_path(dep_formula.linked_keg))
       tab = linked_keg.tab
@@ -937,8 +940,9 @@ on_request: installed_on_request?, options:)
       quiet:                      quiet?,
       verbose:                    verbose?,
     )
-    action = dep_formula.outdated? ? "Upgrading" : "Installing"
-    oh1 "#{action} #{formula.full_name} dependency: #{Formatter.identifier(dep.name)}"
+    action = upgrading ? "Upgrading" : "Installing"
+    oh1 "#{action} #{formula.full_name} dependency: #{Formatter.identifier(dep.name)} " \
+        "(#{upgrade_from}#{dep_formula.pkg_version})"
     # prelude only needed to populate bottle_tab_runtime_dependencies, fetching has already been done.
     fi.prelude
     fi.install
