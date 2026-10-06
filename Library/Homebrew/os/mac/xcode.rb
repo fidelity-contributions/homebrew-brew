@@ -15,12 +15,13 @@ module OS
       # Bump these when a new version is available from the App Store and our
       # CI systems have been updated.
       # This may be a beta version for a beta macOS.
-      sig { params(macos: MacOSVersion).returns(String) }
-      def self.latest_version(macos: MacOS.version)
+      # Pass both `macos` and `arm64` when querying a different system.
+      sig { params(macos: MacOSVersion, arm64: T::Boolean).returns(String) }
+      def self.latest_version(macos: MacOS.version, arm64: ::Hardware::CPU.physical_cpu_arm64?)
         macos = macos.strip_patch
         case macos
         when "27" then "27.0"
-        when "26" then "26.6"
+        when "26" then arm64 ? "27.0" : "26.6"
         when "15" then "26.3"
         when "14" then "16.2"
         when "13" then "15.2"
@@ -328,8 +329,6 @@ module OS
       # share Xcode's latest version otherwise.
       sig { returns(String) }
       def self.latest_version
-        return "27.0" if MacOS.version == "26" && ::Hardware::CPU.physical_cpu_arm64?
-
         case MacOS.version
         when "13" then "15.1"
         when "11" then "13.2"
