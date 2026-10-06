@@ -2006,6 +2006,7 @@ RSpec.describe Cask::Audit, :cask do
     end
 
     describe "token conflicts" do
+      let(:only) { ["token_conflicts"] }
       let(:cask_token) { "with-binary" }
       let(:formula_names) { %w[with-binary other-formula] }
 
