@@ -212,8 +212,11 @@ module OS
         detect_version_from_clang_version
       end
 
-      sig { params(version: ::Version).returns(String) }
-      def self.detect_version_from_clang_version(version = ::DevelopmentTools.clang_version)
+      sig { params(version: ::Version, build: T.nilable(String)).returns(String) }
+      def self.detect_version_from_clang_version(
+        version = ::DevelopmentTools.clang_version,
+        build = ::DevelopmentTools.clang_version_output&.[](/clang-(\d+(?:\.\d+)+)/, 1)
+      )
         return "dunno" if version.null?
 
         # This logic provides a fake Xcode version based on the
@@ -232,7 +235,13 @@ module OS
         when "15.0.0" then "15.4"
         when "16.0.0" then "16.2"
         when "17.0.0" then "26.3"
-        else               "27.0"
+        else
+          # Xcode 26.4 onwards ship clang 21.0.0 so map the full build to the newest matching Xcode.
+          case build
+          when /\A2100\.0\./ then "26.4.1"
+          when /\A2100\.1\./ then "26.6"
+          else                    "27.0"
+          end
         end
       end
 
@@ -390,10 +399,11 @@ module OS
 
       sig { returns(T.nilable(String)) }
       def self.detect_version_from_clang_version
-        clang_version = detect_clang_version&.sub(/\A(\d+)(\d)(\d)\..*/, "\\1.\\2.\\3")
-        return if clang_version.nil?
+        clang_build = detect_clang_version
+        return if clang_build.nil?
 
-        MacOS::Xcode.detect_version_from_clang_version(Version.new(clang_version))
+        clang_version = clang_build.sub(/\A(\d+)(\d)(\d)\..*/, "\\1.\\2.\\3")
+        MacOS::Xcode.detect_version_from_clang_version(Version.new(clang_version), clang_build)
       end
 
       # Version string (a pretty long one) of the CLT package.
