@@ -3,18 +3,33 @@
 
 require "rubocops/class"
 
-RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
+RSpec.describe RuboCop::Cop::FormulaAudit::TestResource do
   subject(:cop) { described_class.new }
 
+  it "allows resources inside test blocks outside homebrew/core" do
+    expect_no_offenses(<<~RUBY, "/Taps/example/homebrew-tools/Formula/foo.rb")
+      class Foo < Formula
+        url "https://brew.sh/foo-1.0.tar.gz"
+
+        test do
+          resource "fixture" do
+            url "https://example.com/fixture.tar.gz"
+          end
+          resource("fixture").stage testpath
+        end
+      end
+    RUBY
+  end
+
   it "moves static test resources and their comments outside the test block" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
         test do
           # Upstream fixture.
           resource "fixture" do
-          ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url "https://example.com/fixture.tar.gz"
             sha256 "abc"
           end
@@ -42,17 +57,17 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "moves multiple test resources without duplicating their test tags" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
         test do
           resource "first", :test do
-          ^^^^^^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url "https://example.com/first.tar.gz"
           end
           resource("second") do
-          ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url "https://example.com/second.tar.gz"
           end
           system "foo", "--version"
@@ -80,14 +95,14 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "reports resources using test-local values without autocorrecting them" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
         test do
           fixture_url = "https://example.com/fixture.tar.gz"
           resource "fixture" do
-          ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url fixture_url
           end
           resource("fixture").stage testpath
@@ -99,14 +114,14 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "reports conditional resources without making them unconditional" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
         test do
           if OS.mac?
             resource "fixture" do
-            ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+            ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
               url "https://example.com/fixture.tar.gz"
             end
           end
@@ -119,7 +134,7 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "allows test resources declared outside the test block" do
-    expect_no_offenses(<<~RUBY)
+    expect_no_offenses(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
@@ -137,13 +152,13 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "does not change heredoc contents when moving a resource" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
         test do
           resource "fixture" do
-          ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url <<~URL
               https://example.com/fixture.tar.gz
             URL
@@ -157,13 +172,13 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "does not remove test code sharing a resource's closing line" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
         test do
           resource "fixture" do
-          ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url "https://example.com/fixture.tar.gz"
           end; system "foo", "--version"
         end
@@ -174,7 +189,7 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
   end
 
   it "does not add test fixtures to a formula's bulk resource installation" do
-    expect_offense(<<~RUBY)
+    expect_offense(<<~RUBY, "/homebrew-core/Formula/foo.rb")
       class Foo < Formula
         url "https://brew.sh/foo-1.0.tar.gz"
 
@@ -184,7 +199,7 @@ RSpec.describe RuboCop::Cop::FormulaAuditStrict::TestResource do
 
         test do
           resource "fixture" do
-          ^^^^^^^^^^^^^^^^^^ FormulaAuditStrict/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
+          ^^^^^^^^^^^^^^^^^^ FormulaAudit/TestResource: Declare test resources outside `test do` using `resource "name", :test do`.
             url "https://example.com/fixture.tar.gz"
           end
           resource("fixture").stage testpath

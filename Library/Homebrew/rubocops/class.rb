@@ -68,15 +68,15 @@ module RuboCop
           (send nil? ${:system :shell_output :pipe_output} $...)
         EOS
       end
-    end
 
-    module FormulaAuditStrict
       # This cop moves resource declarations outside test blocks for prefetching.
       class TestResource < FormulaCop
         extend AutoCorrector
 
         sig { override.params(formula_nodes: FormulaNodes).void }
         def audit_formula(formula_nodes)
+          return if formula_tap != "homebrew-core"
+
           test = find_block(formula_nodes.body_node, :test)
           return unless test
 
@@ -129,7 +129,9 @@ module RuboCop
           end
         end
       end
+    end
 
+    module FormulaAuditStrict
       # This cop makes sure that a `test` block exists.
       class TestPresent < FormulaCop
         sig { override.params(formula_nodes: FormulaNodes).void }

@@ -358,8 +358,8 @@ end
   `brew test-bot` fetches test resources alongside the tested formula's source or bottle so these downloads can run in parallel.
   Ordinary source fetches and installations skip test-only resources.
   Formulae that iterate over `resources` during installation must use `resources.reject(&:test?)` to exclude test fixtures.
-  `brew style --fix --only-cops=FormulaAuditStrict/TestResource <formula>` moves static resource declarations out of `test do` and adds `:test`; declarations using test-time values require manual migration.
-  This check runs during strict audits and is excluded from ordinary `brew style` checks.
+  `brew style --fix --only-cops=FormulaAudit/TestResource <formula>` moves static resource declarations out of `test do` and adds `:test`; declarations using test-time values require manual migration.
+  This check runs during ordinary `brew style` checks for all homebrew/core formulae.
 
 * If the binary only writes to `stderr`, you can redirect `stderr` to `stdout` for assertions with `shell_output`. For example:
 
