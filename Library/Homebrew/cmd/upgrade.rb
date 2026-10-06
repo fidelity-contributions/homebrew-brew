@@ -91,7 +91,8 @@ module Homebrew
           [:switch, "-i", "--interactive", {
             description: "Download and patch <formula>, then open a shell. This allows the user to " \
                          "run `./configure --help` and otherwise determine how to turn the software " \
-                         "package into a Homebrew package.",
+                         "package into a Homebrew package. If <formula> has a `fetch` block, first " \
+                         "open a shell with network access after it runs.",
           }],
           [:switch, "--force-bottle", {
             description: "Install from a bottle if it exists for the current or newest version of " \

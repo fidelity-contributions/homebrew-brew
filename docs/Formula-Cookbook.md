@@ -112,7 +112,7 @@ Check out the [Licence Guidelines](Licence-Guidelines.md) for examples of comple
 HOMEBREW_NO_INSTALL_FROM_API=1 brew install --build-from-source --interactive foo
 ```
 
-You’re now at a new prompt with the tarball extracted to a temporary sandbox.
+You’re now at a new prompt with the tarball extracted to a temporary sandbox. If the formula has a `fetch` block, this first prompt runs after it with network access; type `exit` to continue to the offline build prompt.
 
 Check the package’s `README`. Does the package install with `./configure`, `cmake`, or something else? Delete the commented out `cmake` lines if the package uses `./configure`.
 

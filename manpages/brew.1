@@ -950,7 +950,7 @@ Install but mark as installed as a dependency and not installed on request\.
 Optimise bottles for the specified architecture rather than the oldest architecture supported by the version of macOS the bottles are built on\.
 .TP
 \fB\-i\fP, \fB\-\-interactive\fP
-Download and patch \fIformula\fP, then open a shell\. This allows the user to run \fB\&\./configure \-\-help\fP and otherwise determine how to turn the software package into a Homebrew package\.
+Download and patch \fIformula\fP, then open a shell\. This allows the user to run \fB\&\./configure \-\-help\fP and otherwise determine how to turn the software package into a Homebrew package\. If \fIformula\fP has a \fBfetch\fP block, first open a shell with network access after it runs\.
 .TP
 \fB\-g\fP, \fB\-\-git\fP
 Create a Git repository, useful for creating patches to the software\.
@@ -1207,7 +1207,7 @@ Treat all named arguments as formulae\.
 Compile \fIformula\fP from source even if a bottle is available\.
 .TP
 \fB\-i\fP, \fB\-\-interactive\fP
-Download and patch \fIformula\fP, then open a shell\. This allows the user to run \fB\&\./configure \-\-help\fP and otherwise determine how to turn the software package into a Homebrew package\.
+Download and patch \fIformula\fP, then open a shell\. This allows the user to run \fB\&\./configure \-\-help\fP and otherwise determine how to turn the software package into a Homebrew package\. If \fIformula\fP has a \fBfetch\fP block, first open a shell with network access after it runs\.
 .TP
 \fB\-\-force\-bottle\fP
 Install from a bottle if it exists for the current or newest version of macOS, even if it would not normally be used for installation\.
@@ -1553,7 +1553,7 @@ Treat all named arguments as formulae\. If no named arguments are specified, upg
 Compile \fIformula\fP from source even if a bottle is available\.
 .TP
 \fB\-i\fP, \fB\-\-interactive\fP
-Download and patch \fIformula\fP, then open a shell\. This allows the user to run \fB\&\./configure \-\-help\fP and otherwise determine how to turn the software package into a Homebrew package\.
+Download and patch \fIformula\fP, then open a shell\. This allows the user to run \fB\&\./configure \-\-help\fP and otherwise determine how to turn the software package into a Homebrew package\. If \fIformula\fP has a \fBfetch\fP block, first open a shell with network access after it runs\.
 .TP
 \fB\-\-force\-bottle\fP
 Install from a bottle if it exists for the current or newest version of macOS, even if it would not normally be used for installation\.
