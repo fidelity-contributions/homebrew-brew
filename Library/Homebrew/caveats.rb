@@ -13,11 +13,13 @@ class Caveats
   sig { returns(Formula) }
   attr_reader :formula
 
-  sig { params(formula: Formula).void }
-  def initialize(formula)
+  sig { params(formula: Formula, shadowed_path: T::Boolean).void }
+  def initialize(formula, shadowed_path: true)
     @formula = formula
+    @shadowed_path = shadowed_path
     @caveats = T.let(nil, T.nilable(String))
     @completions_and_elisp = T.let(nil, T.nilable(T::Array[String]))
+    @shadowed_executables = T.let(nil, T.nilable(T::Array[[String, Pathname]]))
   end
 
   sig { returns(String) }
@@ -33,7 +35,7 @@ class Caveats
         formula.build = build
       end
       caveats << keg_only_text
-      caveats << shadowed_path_text
+      caveats << shadowed_path_text if @shadowed_path
       caveats << service_caveats
       caveats.compact.join("\n")
     end
@@ -128,34 +130,35 @@ class Caveats
     s
   end
 
-  sig { returns(T.nilable(String)) }
-  def shadowed_path_text
-    return if Homebrew::EnvConfig.no_path_shadow_check?
-    return unless formula.any_version_installed?
+  sig { returns(T::Array[[String, Pathname]]) }
+  def shadowed_path_executables
+    return [] if Homebrew::EnvConfig.no_path_shadow_check?
+    return [] unless formula.any_version_installed?
 
     shadowed = shadowed_executables
     shadowed = shadowed.select { |_, shadower| sibling_keg_name(shadower) } if formula.keg_only? && !formula.linked?
+    shadowed.sort_by(&:first)
+  end
+
+  sig { returns(T.nilable(String)) }
+  def shadowed_path_text
+    shadowed = shadowed_path_executables
     return if shadowed.empty?
 
-    sibling, external = shadowed.sort_by(&:first).partition { |_, shadower| sibling_keg_name(shadower) }
+    sibling, external = shadowed.partition { |_, shadower| sibling_keg_name(shadower) }
     blocks = []
 
     if external.any?
-      lines = external.map { |name, shadower| "  #{name} (shadowed by #{shadower})" }
       blocks << <<~EOS
-        The following #{formula.name} executables are shadowed by other commands earlier in your PATH:
-        #{lines.join("\n")}
-        Running these by name will not invoke the version provided by Homebrew.
+        #{shadowed_columns(external)}
+        Running these by name will not invoke the version provided by Homebrew
+        because the shadowing commands come earlier in your PATH.
       EOS
     end
 
     if sibling.any?
-      lines = sibling.map do |name, shadower|
-        "  #{name} (shadowed by #{shadower} from #{sibling_keg_name(shadower)})"
-      end
       blocks << <<~EOS
-        The following #{formula.name} executables are shadowed by other linked Homebrew commands:
-        #{lines.join("\n")}
+        #{shadowed_columns(sibling)}
         Running these by name will not invoke the version provided by this formula.
         Run `brew link #{formula.name}` to switch the active version to this keg.
       EOS
@@ -170,6 +173,17 @@ class Caveats
   end
 
   private
+
+  sig { params(shadowed: T::Array[[String, Pathname]]).returns(String) }
+  def shadowed_columns(shadowed)
+    shadowed.group_by { |_, shadower| [shadower.dirname, sibling_keg_name(shadower)] }
+            .map do |(dir, sibling), executables|
+      names = executables.map { |name, _| name }
+      "The following #{formula.name} executables are shadowed by " \
+        "#{"linked #{sibling} " if sibling}commands in #{dir}:\n" \
+        "#{Formatter.columns(names, min_width: names.map(&:length).max.to_i)}"
+    end.join.chomp
+  end
 
   sig { params(shadower: Pathname).returns(T.nilable(String)) }
   def sibling_keg_name(shadower)
@@ -191,7 +205,7 @@ class Caveats
 
   sig { returns(T::Array[[String, Pathname]]) }
   def shadowed_executables
-    [formula.opt_bin, formula.opt_sbin].flat_map do |dir|
+    @shadowed_executables ||= [formula.opt_bin, formula.opt_sbin].flat_map do |dir|
       next [] unless dir.directory?
 
       dir.children.filter_map do |child|

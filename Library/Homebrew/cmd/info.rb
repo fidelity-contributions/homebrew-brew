@@ -606,6 +606,7 @@ module Homebrew
           Options.dump_for_formula formula
         end
 
+        caveats = Caveats.new(formula, shadowed_path: !args.verbose?)
         if args.verbose?
           binaries_keg = kegs.find(&:linked?) || kegs.last
           binaries = if binaries_keg
@@ -617,12 +618,14 @@ module Homebrew
             path_exec_files.map { |path| File.basename(path) }
           end
           if binaries.present?
-            binaries = binaries.sort.uniq
-            ohai "Binaries", Formatter.columns(binaries)
+            binaries = binaries.sort.uniq - caveats.shadowed_path_executables.map(&:first)
+            ohai "Binaries", [
+              (Formatter.columns(binaries) if binaries.any?),
+              caveats.shadowed_path_text,
+            ].compact.join("\n")
           end
         end
 
-        caveats = Caveats.new(formula)
         if (caveats_string = caveats.to_s.presence)
           ohai "Caveats", caveats_string
         end
@@ -843,8 +846,10 @@ module Homebrew
                  "#{" #{linked_marker}" unless linked_marker.empty?}"
           next [line] unless verbose
 
+          lines = [line, "  Cellar: #{keg}"]
           tab_string = keg.tab.to_s
-          tab_string.empty? ? [line] : [line, "  #{tab_string}"]
+          lines << "  #{tab_string}" unless tab_string.empty?
+          lines
         end
       end
 

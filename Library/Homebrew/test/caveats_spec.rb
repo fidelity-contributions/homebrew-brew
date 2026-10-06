@@ -290,28 +290,45 @@ RSpec.describe Caveats do
         allow_any_instance_of(Object).to receive(:which).and_call_original
       end
 
-      it "warns about shadowed executables on PATH in alphabetical order" do
+      it "groups shadowed executables on PATH by directory in alphabetical order" do
+        %w[bar baz].each do |name|
+          FileUtils.touch(f.opt_bin/name)
+          FileUtils.chmod(0755, f.opt_bin/name)
+        end
+
+        { "foo" => "/usr/local/bin", "bar" => "/usr/local/bin", "baz" => "/opt/local/bin" }.each do |name, dir|
+          shadower = Pathname.new("#{dir}/#{name}")
+          allow_any_instance_of(Object).to receive(:which).with(name, ORIGINAL_PATHS).and_return(shadower)
+          allow(shadower).to receive(:realpath).and_return(shadower)
+        end
+        allow(f.opt_bin).to receive(:children).and_return([f.opt_bin/"foo", f.opt_bin/"baz", f.opt_bin/"bar"])
+
+        expect(described_class.new(f).shadowed_path_text)
+          .to include("commands in /usr/local/bin:\nbar\nfoo\n" \
+                      "The following #{f.name} executables are shadowed by commands in /opt/local/bin:\nbaz\n" \
+                      "Running these by name will not invoke the version provided by Homebrew\n" \
+                      "because the shadowing commands come earlier in your PATH.\n")
+      end
+
+      it "lays out shadowed executables in compact columns in a terminal" do
         FileUtils.touch(f.opt_bin/"bar")
         FileUtils.chmod(0755, f.opt_bin/"bar")
+        %w[foo bar].each do |name|
+          shadower = Pathname.new("/usr/local/bin/#{name}")
+          allow_any_instance_of(Object).to receive(:which).with(name, ORIGINAL_PATHS).and_return(shadower)
+          allow(shadower).to receive(:realpath).and_return(shadower)
+        end
+        allow($stdout).to receive(:tty?).and_return(true)
+        allow(Tty).to receive(:width).and_return(80)
 
-        foo_shadower = Pathname.new("/usr/local/bin/foo")
-        bar_shadower = Pathname.new("/usr/local/bin/bar")
-        allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(foo_shadower)
-        allow_any_instance_of(Object).to receive(:which).with("bar", ORIGINAL_PATHS).and_return(bar_shadower)
-        allow(foo_shadower).to receive(:realpath).and_return(foo_shadower)
-        allow(bar_shadower).to receive(:realpath).and_return(bar_shadower)
-        allow(f.opt_bin).to receive(:children).and_return([f.opt_bin/"foo", f.opt_bin/"bar"])
-
-        caveats = described_class.new(f).caveats
-        expect(caveats).to include("foo (shadowed by #{foo_shadower})")
-        expect(caveats.index("bar (shadowed by")).to be < caveats.index("foo (shadowed by")
+        expect(described_class.new(f).shadowed_path_text).to include("commands in /usr/local/bin:\nbar  foo\n")
       end
 
       it "does not warn when PATH resolves to the formula's own executable" do
         own = f.opt_bin/"foo"
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(own)
 
-        expect(described_class.new(f).caveats).not_to include("shadowed")
+        expect(described_class.new(f).shadowed_path_text).to be_nil
       end
 
       it "does not warn for keg-only formulae" do
@@ -326,7 +343,7 @@ RSpec.describe Caveats do
         allow_any_instance_of(Object).to receive(:which)
           .with("foo", ORIGINAL_PATHS).and_return(Pathname.new("/usr/local/bin/foo"))
 
-        expect(described_class.new(keg_only_f).caveats).not_to include("shadowed")
+        expect(described_class.new(keg_only_f).shadowed_path_text).to be_nil
       end
 
       it "does not warn when the queried formula itself is not installed" do
@@ -350,7 +367,7 @@ RSpec.describe Caveats do
                                                  any_version_installed?:   false)
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(sibling_shadower)
 
-        expect(described_class.new(uninstalled_f).caveats).not_to include("shadowed")
+        expect(described_class.new(uninstalled_f).shadowed_path_text).to be_nil
       end
 
       it "warns for a keg-only formula when a sibling keg is linked over it" do
@@ -374,9 +391,9 @@ RSpec.describe Caveats do
                                               any_version_installed?:   true)
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(sibling_shadower)
 
-        caveats = described_class.new(keg_only_f).caveats
-        expect(caveats).to include("foo (shadowed by #{sibling_shadower} from foo@2.0)")
-        expect(caveats).to include("Run `brew link foo@1.0`")
+        text = described_class.new(keg_only_f).shadowed_path_text
+        expect(text).to include("linked foo@2.0 commands in #{sibling_shadower.dirname}:\nfoo\n")
+        expect(text).to include("Run `brew link foo@1.0`")
       end
 
       it "warns when a keg-only formula has been linked" do
@@ -393,7 +410,8 @@ RSpec.describe Caveats do
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(shadower)
         allow(shadower).to receive(:realpath).and_return(shadower)
 
-        expect(described_class.new(keg_only_f).caveats).to include("foo (shadowed by #{shadower})")
+        expect(described_class.new(keg_only_f).shadowed_path_text)
+          .to include("commands in #{shadower.dirname}:\nfoo\n")
       end
 
       it "does not warn when HOMEBREW_NO_PATH_SHADOW_CHECK is set" do
@@ -401,7 +419,33 @@ RSpec.describe Caveats do
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(shadower)
         allow(Homebrew::EnvConfig).to receive(:no_path_shadow_check?).and_return(true)
 
-        expect(described_class.new(f).caveats).not_to include("shadowed")
+        expect(described_class.new(f).shadowed_path_text).to be_nil
+      end
+
+      it "looks up each executable on PATH only once" do
+        shadower = Pathname.new("/usr/local/bin/foo")
+        allow(shadower).to receive(:realpath).and_return(shadower)
+        caveats = described_class.new(f)
+        expect(caveats).to receive(:which).with("foo", ORIGINAL_PATHS).once.and_return(shadower)
+
+        caveats.shadowed_path_executables
+        caveats.shadowed_path_text
+      end
+
+      it "is included in the caveats by default" do
+        shadower = Pathname.new("/usr/local/bin/foo")
+        allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(shadower)
+        allow(shadower).to receive(:realpath).and_return(shadower)
+
+        expect(described_class.new(f).caveats).to include("shadowed by commands in /usr/local/bin:\nfoo\n")
+      end
+
+      it "is not included in the caveats when `shadowed_path` is false" do
+        shadower = Pathname.new("/usr/local/bin/foo")
+        allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(shadower)
+        allow(shadower).to receive(:realpath).and_return(shadower)
+
+        expect(described_class.new(f, shadowed_path: false).caveats).not_to include("shadowed")
       end
 
       it "shows the opt-out hint by default" do
@@ -409,7 +453,7 @@ RSpec.describe Caveats do
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(shadower)
         allow(shadower).to receive(:realpath).and_return(shadower)
 
-        expect(described_class.new(f).caveats).to include("HOMEBREW_NO_PATH_SHADOW_CHECK=1")
+        expect(described_class.new(f).shadowed_path_text).to include("HOMEBREW_NO_PATH_SHADOW_CHECK=1")
       end
 
       it "hides the opt-out hint when HOMEBREW_NO_ENV_HINTS is set" do
@@ -418,7 +462,7 @@ RSpec.describe Caveats do
         allow(shadower).to receive(:realpath).and_return(shadower)
         allow(Homebrew::EnvConfig).to receive(:no_env_hints?).and_return(true)
 
-        expect(described_class.new(f).caveats).not_to include("HOMEBREW_NO_PATH_SHADOW_CHECK")
+        expect(described_class.new(f).shadowed_path_text).not_to include("HOMEBREW_NO_PATH_SHADOW_CHECK")
       end
 
       it "annotates sibling-keg shadowers with the keg name and adds a `brew link` hint" do
@@ -431,11 +475,10 @@ RSpec.describe Caveats do
         allow(f).to receive_messages(versioned_formulae_names: ["#{f.name}@1.0"], unversioned_formula_name: nil)
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(sibling_shadower)
 
-        caveats = described_class.new(f).caveats
-        expect(caveats).to include("shadowed by other linked Homebrew commands")
-        expect(caveats).to include("foo (shadowed by #{sibling_shadower} from #{f.name}@1.0)")
-        expect(caveats).to include("Run `brew link #{f.name}`")
-        expect(caveats).not_to include("earlier in your PATH")
+        text = described_class.new(f).shadowed_path_text
+        expect(text).to include("linked #{f.name}@1.0 commands in #{sibling_shadower.dirname}:\nfoo\n")
+        expect(text).to include("Run `brew link #{f.name}`")
+        expect(text).not_to include("shadowed by commands")
       end
 
       it "annotates only the sibling line when shadowers are mixed" do
@@ -456,10 +499,10 @@ RSpec.describe Caveats do
         allow_any_instance_of(Object).to receive(:which).with("foo", ORIGINAL_PATHS).and_return(sibling_shadower)
         allow_any_instance_of(Object).to receive(:which).with("bar", ORIGINAL_PATHS).and_return(bar_shadower)
 
-        caveats = described_class.new(f).caveats
-        expect(caveats).to include("foo (shadowed by #{sibling_shadower} from #{f.name}@1.0)")
-        expect(caveats).to include("bar (shadowed by #{bar_shadower})")
-        expect(caveats).to include("Run `brew link #{f.name}`")
+        text = described_class.new(f).shadowed_path_text
+        expect(text).to include("linked #{f.name}@1.0 commands in #{sibling_shadower.dirname}:\nfoo\n")
+        expect(text).to include("shadowed by commands in #{bar_shadower.dirname}:\nbar\n")
+        expect(text).to include("Run `brew link #{f.name}`")
       end
     end
 

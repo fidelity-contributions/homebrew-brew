@@ -1219,6 +1219,58 @@ RSpec.describe Homebrew::Cmd::Info do
       .and not_to_output.to_stderr
   end
 
+  describe "shadowed executables" do
+    let(:testball) do
+      formula("testball") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/testball-0.1.tar.gz"
+      end
+    end
+    let(:shadowed_text) do
+      "The following testball executables are shadowed by commands in /usr/local/bin:\ntestball\n"
+    end
+
+    before do
+      keg_path = HOMEBREW_CELLAR/"testball/0.1"
+      (keg_path/"bin").mkpath
+      %w[testball another].each do |name|
+        file = keg_path/"bin"/name
+        file.write("#!/bin/sh\n")
+        file.chmod(0755)
+      end
+      tab = Tab.empty
+      tab.tabfile = keg_path/AbstractTab::FILENAME
+      tab.write
+      testball.opt_prefix.parent.mkpath
+      FileUtils.ln_s(keg_path, testball.opt_prefix)
+
+      shadower = Pathname.new("/usr/local/bin/testball")
+      allow(shadower).to receive(:realpath).and_return(shadower)
+      allow_any_instance_of(Object).to receive(:which).and_call_original
+      allow_any_instance_of(Object).to receive(:which).with("testball", ORIGINAL_PATHS).and_return(shadower)
+      allow(testball).to receive_messages(core_formula?: false, missing_library_linkage: [[], Set.new])
+    end
+
+    it "lists them in the Caveats without --verbose" do
+      info = described_class.new([])
+      allow(info).to receive(:github_info).with(testball).and_return("https://example.com/testball.rb")
+
+      expect { info.info_formula(testball) }
+        .to output(a_string_including("==> Caveats\n#{shadowed_text}")).to_stdout
+        .and not_to_output.to_stderr
+    end
+
+    it "moves them from the Caveats into the Binaries section with --verbose" do
+      info = described_class.new(["--verbose"])
+      allow(info).to receive(:github_info).with(testball).and_return("https://example.com/testball.rb")
+
+      expect { info.info_formula(testball) }
+        .to output(a_string_including("==> Binaries\nanother\n\n#{shadowed_text}")).to_stdout
+        .and not_to_output(/==> Caveats/).to_stdout
+        .and not_to_output.to_stderr
+    end
+  end
+
   it "prints a Binaries section from the bottle manifest when the formula is not installed with --verbose" do
     info = described_class.new(["--verbose"])
     formula = formula("testball") do
@@ -1660,6 +1712,30 @@ RSpec.describe Homebrew::Cmd::Info do
                      ".*testball\\b.*\\s+0\\.10\\s+\\(.*\\)\n" \
                      "(?: .*\n)*" \
                      ".*testball\\b.*\\s+0\\.9\\s+\\(",
+                   )).to_stdout
+        .and not_to_output.to_stderr
+    end
+
+    it "shows the Cellar path of every keg with --verbose" do
+      info = described_class.new(["--verbose"])
+      main_formula = formula("testball") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/testball-1.0.tar.gz"
+      end
+
+      ["0.9", "1.0"].each { |version| (HOMEBREW_CELLAR/"testball/#{version}").mkpath }
+
+      allow(main_formula).to receive(:versioned_formulae).and_return([])
+      allow(info).to receive(:github_info).with(main_formula).and_return("https://example.com/testball.rb")
+
+      expect { info.info_formula(main_formula) }
+        .to output(Regexp.new(
+                     ".*testball\\b.*\\s+1\\.0\\s+\\(.*\\)\n  " \
+                     "Cellar: #{Regexp.escape((HOMEBREW_CELLAR/"testball/1.0").to_s)}\n  " \
+                     "Built from source\n" \
+                     ".*testball\\b.*\\s+0\\.9\\s+\\(.*\\)\n  " \
+                     "Cellar: #{Regexp.escape((HOMEBREW_CELLAR/"testball/0.9").to_s)}\n  " \
+                     "Built from source\n",
                    )).to_stdout
         .and not_to_output.to_stderr
     end
