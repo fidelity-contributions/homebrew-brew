@@ -5,11 +5,37 @@ require "os/mac/xcode"
 
 RSpec.describe OS::Mac::Xcode, :needs_macos do
   describe ".latest_version" do
-    test_each_hash({ "27" => "27.0", "26" => "26.6", "15" => "26.3", "14" => "16.2",
+    test_each_hash({ "27" => "27.0", "26" => "27.0", "15" => "26.3", "14" => "16.2",
                     "13" => "15.2", "12" => "14.2", "11" => "13.2.1" }) do |macos, xcode|
       it "recommends Xcode #{xcode} on macOS #{macos}" do
+        allow(Hardware::CPU).to receive(:physical_cpu_arm64?).and_return(true)
+
         expect(described_class.latest_version(macos: MacOSVersion.new(macos))).to eq(xcode)
       end
+    end
+
+    it "caps Xcode at 26.6 on Intel Tahoe" do
+      allow(Hardware::CPU).to receive_messages(intel?: true, physical_cpu_arm64?: false)
+
+      expect(described_class.latest_version(macos: MacOSVersion.new("26"))).to eq("26.6")
+    end
+
+    it "recommends Xcode 27 under Rosetta on Tahoe" do
+      allow(Hardware::CPU).to receive_messages(intel?: true, physical_cpu_arm64?: true)
+
+      expect(described_class.latest_version(macos: MacOSVersion.new("26"))).to eq("27.0")
+    end
+
+    it "caps Xcode for an Intel Tahoe target on Apple silicon" do
+      allow(Hardware::CPU).to receive(:physical_cpu_arm64?).and_return(true)
+
+      expect(described_class.latest_version(macos: MacOSVersion.new("26"), arm64: false)).to eq("26.6")
+    end
+
+    it "recommends Xcode 27 for an Apple silicon Tahoe target on Intel" do
+      allow(Hardware::CPU).to receive(:physical_cpu_arm64?).and_return(false)
+
+      expect(described_class.latest_version(macos: MacOSVersion.new("26"), arm64: true)).to eq("27.0")
     end
   end
 

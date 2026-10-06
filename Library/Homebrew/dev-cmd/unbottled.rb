@@ -246,7 +246,10 @@ module Homebrew
               when XcodeRequirement
                 next true unless r.version
 
-                Version.new(::OS::Mac::Xcode.latest_version(macos: macos_version)) >= r.version
+                Version.new(
+                  ::OS::Mac::Xcode.latest_version(macos: macos_version,
+                                                  arm64: @bottle_tag.standardized_arch == :arm64),
+                ) >= r.version
               when ArchRequirement
                 r.arch == @bottle_tag.arch
               else
