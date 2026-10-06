@@ -283,7 +283,7 @@ module Utils
       end
 
       # Yields patch blocks in all scopes; the caller returns patches or branches to remove.
-      # Removes platform wrappers emptied by patch removal, including their comments.
+      # Removes adjoining comments and platform wrappers emptied by patch removal.
       sig { params(block: T.proc.params(node: BlockNode).returns(T::Array[BlockNode])).void }
       def remove_patches(&block)
         nodes = children.flat_map { |node| node.each_node(:block).to_a }.grep(BlockNode)
@@ -302,7 +302,7 @@ module Utils
           removals.reject! { |removal| node.source_range.contains?(removal.source_range) }
           removals << node
         end
-        removals.each { |node| remove_stanza_node(node) }
+        removals.each { |node| remove_stanza_node(node, remove_leading_comments: true) }
       end
 
       # Finds DSL calls regardless of their platform or enclosing scope.
@@ -427,11 +427,21 @@ module Utils
         tree_rewriter.replace(pair.value.source_range, ruby_literal(value))
       end
 
-      sig { params(stanza_node: Node).void }
-      def remove_stanza_node(stanza_node)
+      sig { params(stanza_node: Node, remove_leading_comments: T::Boolean).void }
+      def remove_stanza_node(stanza_node, remove_leading_comments: false)
+        stanza_range = stanza_node.source_range
+        if remove_leading_comments
+          processed_source.comments.reverse_each do |comment|
+            comment_range = comment.location.expression
+            next if comment_range.last_line != stanza_range.first_line - 1
+            next if comment_range.column != stanza_range.column
+
+            stanza_range = stanza_range.with(begin_pos: comment_range.begin_pos)
+          end
+        end
+
         # stanza is probably followed by a newline character
         # try to delete it if so
-        stanza_range = stanza_node.source_range
         trailing_range = stanza_range.with(begin_pos: stanza_range.end_pos,
                                            end_pos:   stanza_range.end_pos + 1)
         if trailing_range.source.chomp.empty?

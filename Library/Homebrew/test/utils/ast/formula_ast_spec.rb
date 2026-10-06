@@ -38,11 +38,109 @@ RSpec.describe Utils::AST::FormulaAST do
     end
 
     it "removes empty platform wrappers including comments inside removed patches" do
-      ast = described_class.new("class Foo < Formula\non_macos do\n# Platform explanation\non_arm do\n" \
+      ast = described_class.new("class Foo < Formula\n# Patches\non_macos do\n# Platform explanation\non_arm do\n" \
                                 "#{patch.sub("patch do", "patch do\n# Patch-specific explanation")}\nend\nend\nend\n")
       ast.remove_patches { |node| [node] }
 
       expect(ast.process).to eq("class Foo < Formula\nend\n")
+    end
+
+    it "removes adjoining comments and redundant blank lines for adjacent and separated patches" do
+      ast = described_class.new <<~RUBY
+        class Foo < Formula
+          # Keep the dependency explanation.
+          depends_on "foo" # Keep the inline comment.
+
+          # Backport a build fix.
+          # These commits will be included in the next release.
+          patch do
+            url "https://example.com/first.patch"
+          end
+          patch do
+            url "https://example.com/second.patch"
+          end
+
+          # Backport another fix.
+          patch do
+            url "https://example.com/third.patch"
+          end
+
+          # Keep the installation explanation.
+          def install
+            bin.install "foo"
+          end
+        end
+      RUBY
+      ast.remove_patches { |node| [node] }
+
+      expect(ast.process).to eq <<~RUBY
+        class Foo < Formula
+          # Keep the dependency explanation.
+          depends_on "foo" # Keep the inline comment.
+
+          # Keep the installation explanation.
+          def install
+            bin.install "foo"
+          end
+        end
+      RUBY
+    end
+
+    it "preserves general comments separated from a patch comment by a blank line" do
+      ast = described_class.new <<~RUBY
+        class Foo < Formula
+          # These build notes also apply without the patch.
+          # Keep them when updating the formula.
+
+          # Backport a build fix.
+          patch do
+            url "https://example.com/fix.patch"
+          end
+
+          def install
+            bin.install "foo"
+          end
+        end
+      RUBY
+      ast.remove_patches { |node| [node] }
+
+      expect(ast.process).to eq <<~RUBY
+        class Foo < Formula
+          # These build notes also apply without the patch.
+          # Keep them when updating the formula.
+
+          def install
+            bin.install "foo"
+          end
+        end
+      RUBY
+    end
+
+    it "preserves an adjoining dependency's inline comment and a retained patch's comment" do
+      ast = described_class.new <<~RUBY
+        class Foo < Formula
+          depends_on "foo" # The system library is too old.
+          # Backport a build fix.
+          patch do
+            url "https://example.com/first.patch"
+          end
+          # This other fix is still needed.
+          patch do
+            url "https://example.com/second.patch"
+          end
+        end
+      RUBY
+      ast.remove_patches { |node| node.source.include?("first.patch") ? [node] : [] }
+
+      expect(ast.process).to eq <<~RUBY
+        class Foo < Formula
+          depends_on "foo" # The system library is too old.
+          # This other fix is still needed.
+          patch do
+            url "https://example.com/second.patch"
+          end
+        end
+      RUBY
     end
 
     it "preserves a platform wrapper containing other declarations" do
