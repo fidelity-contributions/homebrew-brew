@@ -881,7 +881,8 @@ class Formula
   #
   # @api public
   sig {
-    params(name: T.nilable(String), klass: T.class_of(Resource), block: T.nilable(T.proc.bind(Resource).void))
+    params(name: T.nilable(String), klass: T.any(T.class_of(Resource), Symbol),
+           block: T.nilable(T.proc.bind(Resource).void))
       .returns(T.nilable(Resource))
   }
   def resource(name = nil, klass = Resource, &block)
@@ -3848,12 +3849,16 @@ class Formula
     end
   end
 
-  sig { params(download_queue: Homebrew::DownloadQueue).void }
-  def enqueue_resources_and_patches(download_queue:)
+  sig { params(download_queue: Homebrew::DownloadQueue, test: T::Boolean).void }
+  def enqueue_resources_and_patches(download_queue:, test: false)
     resources.each do |resource|
+      next if resource.test? != test
+
       download_queue.enqueue(resource)
       resource.patches.select(&:external?).each { |patch| download_queue.enqueue(patch.resource) }
     end
+    return if test
+
     patchlist.select(&:external?).each { |patch| download_queue.enqueue(patch.resource) }
   end
 
@@ -4628,6 +4633,8 @@ class Formula
     # Additional downloads can be defined as {resource}s and accessed in the
     # install method. Resources can also be defined inside a {.stable} or
     # {.head} block. This mechanism replaces ad-hoc "subformula" classes.
+    # Pass `:test` as the second argument for resources only needed by {.test}.
+    # These are fetched by `brew fetch --test` or before the test sandbox starts.
     #
     # ### Example
     #
@@ -4639,7 +4646,10 @@ class Formula
     # ```
     #
     # @api public
-    sig { params(name: String, klass: T.class_of(Resource), block: T.nilable(T.proc.bind(Resource).void)).void }
+    sig {
+      params(name: String, klass: T.any(T.class_of(Resource), Symbol),
+             block: T.nilable(T.proc.bind(Resource).void)).void
+    }
     def resource(name, klass = Resource, &block)
       specs.each do |spec|
         spec.resource(name, klass, &block) unless spec.resource_defined?(name)

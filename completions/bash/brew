@@ -1645,6 +1645,7 @@ _brew_fetch() {
       --os
       --quiet
       --retry
+      --test
       --verbose
       "
       return

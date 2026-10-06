@@ -1,4 +1,4 @@
-# typed: strict
+# typed: true
 # frozen_string_literal: true
 
 require "cmd/fetch"
@@ -6,6 +6,79 @@ require "cmd/shared_examples/args_parse"
 
 RSpec.describe Homebrew::Cmd::FetchCmd do
   it_behaves_like "parseable arguments"
+
+  describe "--test" do
+    let(:cmd) { described_class.new(["--test", "foo"]) }
+    let(:download_queue) { instance_double(Homebrew::DownloadQueue, fetch: nil, shutdown: nil) }
+    let(:downloads) { [] }
+    let(:foo) do
+      formula("foo") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/foo-1.0.tar.gz"
+
+        resource "build" do
+          url "https://brew.sh/build-1.0.tar.gz"
+        end
+
+        resource "fixture", :test do
+          url "https://brew.sh/fixture-1.0.tar.gz"
+        end
+      end
+    end
+
+    before do
+      allow(Homebrew::DownloadQueue).to receive(:new).and_return(download_queue)
+      allow(download_queue).to receive(:enqueue) { |download| downloads << download }
+      allow(cmd.args.named).to receive_messages(to_formulae: [foo], to_formulae_and_casks: [foo])
+      allow(Formulary).to receive(:factory).and_return(foo)
+      allow(cmd).to receive(:fetch_bottle?).and_return(false)
+      allow(cmd).to receive(:run_fetch_hook)
+    end
+
+    it "fetches test resources alongside an available bottle" do
+      bottle = instance_double(Bottle, github_packages_manifest_resource: nil)
+      allow(foo).to receive(:bottle_for_tag).and_return(bottle)
+      allow(cmd).to receive(:fetch_bottle?).and_return(true)
+
+      cmd.run
+
+      expect(downloads).to eq([foo.resource("fixture"), bottle])
+    end
+
+    it "loads the formula source to find test resources when using the API" do
+      ENV.delete("HOMEBREW_TEST_GENERIC_OS")
+      allow(foo).to receive(:loaded_from_api?).and_return(true)
+      expect(Homebrew::API::Formula).to receive(:source_download_formula).with(foo).and_return(foo)
+
+      cmd.run
+    end
+
+    it "runs the build fetch hook when fetching sources" do
+      expect(cmd).to receive(:run_fetch_hook).with(foo)
+
+      cmd.run
+    end
+
+    it "resolves named arguments as formulae" do
+      expect(cmd.args.named).to receive(:to_formulae).and_return([foo])
+
+      cmd.run
+    end
+
+    test_each(%w[--build-from-source --build-bottle --force-bottle --bottle-tag=arm64_tahoe --deps]) do |flag|
+      it "combines test resource downloads with #{flag}" do
+        cmd = described_class.new(["--test", flag, "foo"])
+        allow(cmd.args.named).to receive_messages(to_formulae: [foo], to_formulae_and_casks: [foo])
+        allow(cmd).to receive(:fetch_bottle?).and_return(false)
+        allow(cmd).to receive(:run_fetch_hook)
+        allow(foo).to receive(:recursive_dependencies).and_return([])
+
+        cmd.run
+
+        expect(downloads).to eq([foo.resource("fixture"), foo.resource, foo.resource("build")])
+      end
+    end
+  end
 
   it "does not run a formula's fetch hook until its dependencies are installed" do
     cmd = described_class.new(["--build-from-source", "foo"])

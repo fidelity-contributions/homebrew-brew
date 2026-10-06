@@ -430,6 +430,8 @@ module Homebrew
 
         unless dependent_was_previously_installed
           build_args = []
+          fetch_args = ["--retry"]
+          fetch_args << "--test" if testable_dependents.include?(dependent)
 
           fetch_formulae = dependent_dependencies.reject(&:satisfied?).map(&:name)
 
@@ -440,8 +442,10 @@ module Homebrew
             install_subversion_if_needed(required_dependent_deps, required_dependent_reqs)
 
             build_args << "--build-from-source"
+          end
 
-            test "brew", "fetch", "--build-from-source", "--retry", dependent.full_name
+          if build_from_source || testable_dependents.include?(dependent)
+            test "brew", "fetch", *build_args, *fetch_args, dependent.full_name
             return if steps.fetch(-1).failed?
           else
             fetch_formulae << dependent.full_name

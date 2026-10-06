@@ -47,6 +47,8 @@ module Homebrew
                             "exponential backoff."
         switch "--deps",
                description: "Also download dependencies for any listed <formula>."
+        switch "--test",
+               description: "Also download test resources and their patches for each <formula>."
         switch "-s", "--build-from-source",
                description: "Download source packages rather than a bottle."
         switch "--build-bottle",
@@ -62,6 +64,7 @@ module Homebrew
         conflicts "--build-from-source", "--build-bottle", "--force-bottle", "--bottle-tag"
         conflicts "--cask", "--HEAD"
         conflicts "--cask", "--deps"
+        conflicts "--cask", "--test"
         conflicts "--cask", "-s"
         conflicts "--cask", "--build-bottle"
         conflicts "--cask", "--force-bottle"
@@ -95,6 +98,8 @@ module Homebrew
               formula_or_cask
             end
           end
+        elsif args.test?
+          args.named.to_formulae
         else
           args.named.to_formulae_and_casks
         end.uniq
@@ -115,6 +120,11 @@ module Homebrew
                 formula = Formulary.factory(ref, args.HEAD? ? :head : :stable)
 
                 formula.print_tap_action verb: "Fetching"
+
+                if args.test?
+                  formula = Homebrew::API::Formula.source_download_formula(formula) if formula.loaded_from_api?
+                  formula.enqueue_resources_and_patches(download_queue:, test: true)
+                end
 
                 fetched_bottle = false
                 if fetch_bottle?(
@@ -349,6 +359,7 @@ module Homebrew
 
       sig { returns(T::Boolean) }
       def api_fetchable?
+        return false if args.test?
         return false if Homebrew::EnvConfig.no_install_from_api?
         return false if args.all_platforms? || args.os.present? || args.arch.present?
         return false if ENV["HOMEBREW_TEST_GENERIC_OS"].present?

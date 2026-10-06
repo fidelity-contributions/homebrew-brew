@@ -6,6 +6,21 @@ require "rubocops/class"
 RSpec.describe RuboCop::Cop::FormulaAudit::Test do
   subject(:cop) { described_class.new }
 
+  it "allows existing resources inside test blocks without a strict audit" do
+    expect_no_offenses(<<~RUBY)
+      class Foo < Formula
+        url "https://brew.sh/foo-1.0.tar.gz"
+
+        test do
+          resource "fixture" do
+            url "https://example.com/fixture.tar.gz"
+          end
+          resource("fixture").stage testpath
+        end
+      end
+    RUBY
+  end
+
   it "reports and corrects an offense when /usr/local/bin is found in test calls" do
     expect_offense(<<~'RUBY')
       class Foo < Formula

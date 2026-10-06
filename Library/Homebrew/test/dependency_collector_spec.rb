@@ -62,6 +62,16 @@ RSpec.describe DependencyCollector do
       expect(collector.add(resource)).to eq(Dependency.new("p7zip", [:build, :test, :implicit]))
     end
 
+    it "keeps test-only resource dependencies separate from cached build dependencies" do
+      resource = Resource.new
+      resource.url("https://brew.sh/build.7z")
+      collector.fetch(resource)
+      test_resource = Resource.new(test: true)
+      test_resource.url("https://brew.sh/test.7z")
+
+      expect(collector.fetch(test_resource)).to eq(Dependency.new("p7zip", [:test, :implicit]))
+    end
+
     it "creates a resource dependency from a '.gz' URL" do
       resource = Resource.new
       resource.url("https://brew.sh/foo.tar.gz")

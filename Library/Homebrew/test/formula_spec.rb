@@ -33,6 +33,49 @@ RSpec.describe Formula do
     end
   end
 
+  describe "#enqueue_resources_and_patches" do
+    let(:f) do
+      formula do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/foo-1.0.tar.gz"
+
+        resource "build" do
+          url "https://brew.sh/build-1.0.tar.gz"
+        end
+
+        resource "fixture", :test do
+          url "https://brew.sh/fixture-1.0.tar.gz"
+
+          patch do
+            url "https://brew.sh/fixture.patch"
+          end
+        end
+
+        patch do
+          url "https://brew.sh/build.patch"
+        end
+      end
+    end
+    let(:download_queue) { instance_double(Homebrew::DownloadQueue) }
+    let(:downloads) { [] }
+
+    before do
+      allow(download_queue).to receive(:enqueue) { |download| downloads << download }
+    end
+
+    it "excludes test-only resources from source downloads" do
+      f.enqueue_resources_and_patches(download_queue:)
+
+      expect(downloads).to eq([f.resource("build"), f.patchlist.fetch(0).resource])
+    end
+
+    it "downloads only test resources and their patches for tests" do
+      f.enqueue_resources_and_patches(download_queue:, test: true)
+
+      expect(downloads).to eq([f.resource("fixture"), f.resource("fixture").patches.fetch(0).resource])
+    end
+  end
+
   describe "#run_test" do
     let(:f) { Testball.new }
     let(:testpath) { mktmpdir }

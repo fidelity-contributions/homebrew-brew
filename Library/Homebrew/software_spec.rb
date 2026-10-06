@@ -184,7 +184,8 @@ class SoftwareSpec
   end
 
   sig {
-    params(name: T.nilable(String), klass: T.class_of(Resource), block: T.nilable(T.proc.bind(Resource).void))
+    params(name: T.nilable(String), klass: T.any(T.class_of(Resource), Symbol),
+           block: T.nilable(T.proc.bind(Resource).void))
       .returns(T.nilable(Resource))
   }
   def resource(name = nil, klass = Resource, &block)
@@ -192,7 +193,14 @@ class SoftwareSpec
       raise ArgumentError, "Resource must have a name." if name.nil?
       raise DuplicateResourceError, name if resource_defined?(name)
 
-      res = klass.new(name, &block)
+      res = case klass
+      when :test
+        Resource.new(name, test: true, &block)
+      when Symbol
+        raise ArgumentError, "Unknown resource type: #{klass.inspect}"
+      else
+        klass.new(name, &block)
+      end
       return unless res.url
 
       resources[name] = res

@@ -61,4 +61,7 @@ class Homebrew::Cmd::FetchCmd::Args < Homebrew::CLI::Args
 
   sig { returns(T::Boolean) }
   def s?; end
+
+  sig { returns(T::Boolean) }
+  def test?; end
 end

@@ -1237,6 +1237,10 @@ binaries for *`cask`*s. For files, also print SHA-256 checksums.
 
 : Also download dependencies for any listed *`formula`*.
 
+`--test`
+
+: Also download test resources and their patches for each *`formula`*.
+
 `-s`, `--build-from-source`
 
 : Download source packages rather than a bottle.

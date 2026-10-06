@@ -9,6 +9,46 @@ RSpec.describe Homebrew::TestBot::FormulaeDependents do
     described_class.new(tap: nil, git: nil, dry_run: false, fail_fast: false, verbose: false)
   end
 
+  describe "#install_dependent" do
+    subject(:formulae_dependents) do
+      Class.new(described_class) do
+        T.bind(self, T.class_of(Homebrew::TestBot::FormulaeDependents))
+        public :install_dependent
+      end.new(tap: nil, git: nil, dry_run: true, fail_fast: false, verbose: false)
+    end
+
+    let(:dependent) do
+      formula("foo") do
+        T.bind(self, T.class_of(Formula))
+        url "https://brew.sh/foo-1.0.tar.gz"
+      end
+    end
+
+    before do
+      allow(formulae_dependents).to receive_messages(unsatisfied_requirements_messages: nil, bottled?: true)
+      allow(formulae_dependents).to receive(:cleanup_during!)
+      allow(formulae_dependents).to receive(:unlink_conflicts)
+      allow(formulae_dependents).to receive(:install_curl_if_needed)
+      allow(dependent).to receive(:latest_version_installed?).and_return(false)
+      allow(Dependency).to receive(:expand).and_return([instance_double(Dependency, name: "bar", satisfied?: false)])
+    end
+
+    it "fetches test resources only for the bottled dependent being tested" do
+      formulae_dependents.install_dependent(dependent, [dependent], args: Homebrew::Cmd::TestBotCmd.new([]).args)
+
+      expect(formulae_dependents.steps.map(&:command).select { |command| command[1] == "fetch" })
+        .to eq([%w[brew fetch --retry --test foo], %w[brew fetch --retry bar]])
+    end
+
+    it "fetches test resources alongside source downloads" do
+      formulae_dependents.install_dependent(dependent, [dependent],
+                                            args: Homebrew::Cmd::TestBotCmd.new([]).args, build_from_source: true)
+
+      expect(formulae_dependents.steps.map(&:command).select { |command| command[1] == "fetch" })
+        .to eq([%w[brew fetch --build-from-source --retry --test foo], %w[brew fetch --retry bar]])
+    end
+  end
+
   describe "#dependents_for_shard" do
     it "keeps dependent formulae that depend on each other in the same shard" do
       dependency = formula "dependent-a" do
