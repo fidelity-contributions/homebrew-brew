@@ -40,12 +40,18 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
   end
 
   describe ".detect_version" do
-    it "infers Xcode 27 from the Command Line Tools compiler" do
-      allow(described_class).to receive_messages(installed?: false, prefix: nil)
-      allow(OS::Mac::CLT).to receive(:installed?).and_return(true)
-      allow(DevelopmentTools).to receive(:clang_version).and_return(Version.new("21.0.0"))
+    test_each_hash({ "2100.0.123.102" => "26.4.1", "2100.1.1.101" => "26.6",
+                    "2100.3.34.2" => "27.0" }) do |build, xcode|
+      it "infers Xcode #{xcode} from the clang-#{build} Command Line Tools compiler" do
+        allow(described_class).to receive_messages(installed?: false, prefix: nil)
+        allow(OS::Mac::CLT).to receive(:installed?).and_return(true)
+        allow(DevelopmentTools).to receive_messages(
+          clang_version:        Version.new("21.0.0"),
+          clang_version_output: "Apple clang version 21.0.0 (clang-#{build})\n",
+        )
 
-      expect(described_class.detect_version).to eq("27.0")
+        expect(described_class.detect_version).to eq(xcode)
+      end
     end
 
     it "loads Plist when version.plist exists" do
@@ -143,6 +149,14 @@ RSpec.describe OS::Mac::Xcode, :needs_macos do
         allow(described_class).to receive(:detect_clang_version).and_return("2100.1.1.101")
 
         expect(described_class.outdated?).to be true
+      end
+    end
+
+    describe ".detect_version_from_clang_version" do
+      it "infers Xcode 26.6 from the Command Line Tools 26.6 compiler" do
+        allow(described_class).to receive(:detect_clang_version).and_return("2100.1.1.101")
+
+        expect(described_class.detect_version_from_clang_version).to eq("26.6")
       end
     end
 
