@@ -37,6 +37,12 @@ brew install user/repository/formula
 brew install --cask user/repository/cask
 ```
 
+Formula trust must be granted using the canonical name. If an alias or former
+name resolves to an untrusted formula, Homebrew refuses to load it and shows the
+canonical name to trust explicitly. Aliases and former names can be used once
+that formula is trusted. If their target changes, the new formula requires its
+own trust; existing trust does not follow the alias or rename.
+
 To install by short name from a tapped repository, trust the specific item first:
 
 ```sh
