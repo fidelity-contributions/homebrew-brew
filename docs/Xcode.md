@@ -22,10 +22,9 @@ When Apple publishes a new Xcode or Command Line Tools release:
 1. Confirm the version, build number, bundled Apple Clang version and supported macOS versions from Apple's release information.
 2. Update `OS::Mac::Xcode.latest_version` when the latest Xcode mapping changes.
 3. Update `OS::Mac::CLT.latest_clang_version` when the Command Line Tools compiler mapping changes.
-4. Update `OS::Mac::Xcode.detect_version_from_clang_version` when Homebrew must infer a new Xcode version from Apple Clang.
-5. Review minimum-version checks and diagnostic text in the same file for assumptions affected by the release.
-6. Add or update automated coverage for every changed mapping or inference.
-7. Verify `brew config` and the relevant `brew doctor` output on an affected macOS runner when one is available.
+4. Review minimum-version checks and diagnostic text in the same file for assumptions affected by the release.
+5. Add or update automated coverage for every changed mapping.
+6. Verify `brew config` and the relevant `brew doctor` output on an affected macOS runner when one is available.
 
 Run the repository checks from the Homebrew/brew checkout:
 
