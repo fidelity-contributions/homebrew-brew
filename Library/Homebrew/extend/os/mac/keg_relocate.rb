@@ -287,13 +287,6 @@ module OS
         "-lrO"
       end
 
-      sig { returns([String, String]) }
-      def egrep_args
-        grep_bin = "egrep"
-        grep_args = "--files-with-matches"
-        [grep_bin, grep_args]
-      end
-
       private
 
       CELLAR_RX = %r{\A#{HOMEBREW_CELLAR}/(?<formula_name>[^/]+)/[^/]+}

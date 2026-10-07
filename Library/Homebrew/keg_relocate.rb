@@ -14,7 +14,6 @@ class Keg
   PERL_PLACEHOLDER = "@@HOMEBREW_PERL@@"
   JAVA_PLACEHOLDER = "@@HOMEBREW_JAVA@@"
   NULL_BYTE = "\x00"
-  NULL_BYTE_STRING = "\\x00"
 
   class Relocation
     RELOCATABLE_PATH_REGEX_PREFIX = /(?:(?<=-F|-I|-L|-isystem)|(?<![a-zA-Z0-9]))/
@@ -471,18 +470,6 @@ class Keg
     "-lr"
   end
 
-  sig { returns([String, T::Array[String]]) }
-  def egrep_args
-    grep_bin = "grep"
-    grep_args = [
-      "--files-with-matches",
-      "--perl-regexp",
-      "--binary-files=text",
-    ]
-
-    [grep_bin, grep_args]
-  end
-
   # The regular files the keg-relative paths recorded in bottle metadata refer
   # to. Metadata may come from a mirror, so paths that would escape the keg
   # (absolute, via `..` or through a symlinked parent) are ignored rather than
@@ -522,14 +509,21 @@ class Keg
     files_matching_by_inode(string).map { |group| group.fetch(0) }.each(&block)
   end
 
+  # 4096 bytes is a conservative default matching the memory page/disk
+  # block size of most architectures.
+  READ_MAX_BYTES = 4096
+  private_constant :READ_MAX_BYTES
+
   sig { params(file: Pathname).returns(T::Boolean) }
   def binary_file?(file)
-    grep_bin, grep_args = egrep_args
-
-    # We need to pass NULL_BYTE_STRING, the literal string "\x00", to grep
-    # rather than NULL_BYTE, a literal null byte, because grep will internally
-    # convert the literal string "\x00" to a null byte.
-    Utils.popen_read(grep_bin, *grep_args, NULL_BYTE_STRING, file).present?
+    file.open("rb") do |f|
+      while (chunk = f.read(READ_MAX_BYTES))
+        return true if chunk.include?(NULL_BYTE)
+      end
+      false
+    end
+  rescue Errno::ENOENT, Errno::EACCES, Errno::EISDIR
+    false
   end
 
   sig { returns(Pathname) }
