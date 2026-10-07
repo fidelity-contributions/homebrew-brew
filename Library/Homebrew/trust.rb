@@ -131,11 +131,12 @@ module Homebrew
         tap = Tap.fetch(tap_name)
         next if tap.official?
 
+        formula_name = (type == :cask) ? item_name : tap_formula_name(tap, item_name)
         types = if type == :formula
-          tap.formula_files_by_name.key?(item_name) ? [:formula] : []
+          tap.formula_files_by_name.key?(formula_name) ? [:formula] : []
         elsif type == :cask
           tap.cask_files_by_name.key?(item_name) ? [:cask] : []
-        elsif tap.formula_files_by_name.key?(item_name)
+        elsif tap.formula_files_by_name.key?(formula_name)
           [:formula]
         elsif tap.cask_files_by_name.key?(item_name)
           [:cask]
@@ -143,8 +144,13 @@ module Homebrew
           []
         end
         types.each do |item_type|
+          if item_type == :formula && formula_name != item_name.downcase &&
+             trusted?(:formula, "#{tap.name}/#{formula_name}")
+            next
+          end
+
           full_name = "#{tap.name}/#{item_name}"
-          if trust!(item_type, item_trust_name(item_type, tap, item_name))
+          if trust!(item_type, trust_name(item_type, name))
             $stderr.ohai "Trusted #{item_type} #{full_name}"
           end
         end
@@ -339,7 +345,9 @@ module Homebrew
 
       tap, token = tap_with_name
       candidate_types = T.let([], T::Array[Symbol])
-      candidate_types << :formula if tap.formula_files_by_name.key?(token)
+      if tap.formula_files_by_name.key?(token) || tap_formula_name(tap, token) != token
+        candidate_types << :formula
+      end
       candidate_types << :cask if tap.cask_files_by_name.key?(token)
       if tap.command_files.any? { |path| path.basename(path.extname).to_s.delete_prefix("brew-") == token }
         candidate_types << :command
@@ -352,7 +360,7 @@ module Homebrew
       end
       candidates = T.let([], T::Array[[Symbol, String]])
       candidate_types.uniq.each do |candidate_type|
-        candidates << [candidate_type, item_trust_name(candidate_type, tap, token, include_existing:)]
+        candidates << [candidate_type, trust_name(candidate_type, name, include_existing:)]
       end
       return candidates.fetch(0) if candidates.one?
 
@@ -380,6 +388,20 @@ module Homebrew
         end
       when :formula
         tap, formula_name = fully_qualified_package_name(name, "Formulae")
+        if include_existing
+          existing_name = item_trust_name(type, tap, formula_name, include_existing:, tap_remote:)
+          return existing_name if trusted_entries(type).include?(existing_name)
+        end
+
+        if tap_remote.nil? || Tap.same_remote?(tap_remote, tap.remote)
+          canonical_name = tap_formula_name(tap, formula_name)
+          if !include_existing && canonical_name != formula_name
+            raise UsageError, "#{name} resolves to #{tap.name}/#{canonical_name}.\n" \
+                              "Trust the canonical formula explicitly:\n  " \
+                              "brew trust --formula #{tap.name}/#{canonical_name}"
+          end
+          formula_name = canonical_name
+        end
         item_trust_name(type, tap, formula_name, include_existing:, tap_remote:)
       when :cask
         tap, token = fully_qualified_package_name(name, "Casks")
@@ -571,11 +593,30 @@ module Homebrew
       downcased_args = ARGV.map(&:downcase)
       downcased_full_name = full_name.downcase
       tap_name = tap.name.downcase
-      downcased_args.include?(downcased_full_name) ||
-        downcased_args.include?("--tap=#{tap_name}") ||
+      if downcased_args.include?(downcased_full_name)
+        return true if type != :formula
+
+        name = ::Utils.name_from_full_name(downcased_full_name)
+        return true if tap_formula_name(tap, name) == name
+      end
+
+      downcased_args.include?("--tap=#{tap_name}") ||
         downcased_args.each_cons(2).any? { |option, value| option == "--tap" && value == tap_name }
     end
     private_class_method :explicitly_allowed?
+
+    # Match Formulary.tap_formula_name_type without loading Ruby or following tap migrations.
+    sig { params(tap: Tap, name: String).returns(String) }
+    def self.tap_formula_name(tap, name)
+      name = name.downcase
+      if (alias_target = tap.alias_table[tap.core_tap? ? name : "#{tap.name}/#{name}"].presence)
+        name = ::Utils.name_from_full_name(alias_target)
+      elsif (new_name = tap.formula_renames[name].presence)
+        name = new_name
+      end
+      name
+    end
+    private_class_method :tap_formula_name
 
     sig { params(type: Symbol, files: T::Array[Pathname]).returns(T::Array[Pathname]) }
     def self.trusted_files(type, files)

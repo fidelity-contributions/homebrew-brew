@@ -1,6 +1,7 @@
 # typed: strict
 # frozen_string_literal: true
 
+require "formulary"
 require "tap"
 require "trust"
 
@@ -294,6 +295,227 @@ RSpec.describe Homebrew::Trust, :trust_store do
   ensure
     described_class.clear!(:formula)
     described_class.clear!(:cask)
+    FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"thirdparty"
+  end
+
+  shared_examples "a fully qualified formula alias or rename" do |name|
+    T.bind(self, T.class_of(RSpec::Core::ExampleGroup))
+
+    sig { returns(Tap) }
+    let(:tap) { Tap.fetch("thirdparty", "foo") }
+
+    sig { returns(Pathname) }
+    let(:formula_path) { tap.formula_dir/"bar.rb" }
+
+    sig { returns(String) }
+    let(:full_name) { "#{tap.name}/#{name}" }
+
+    around do |example|
+      old_argv = ARGV.dup
+      ARGV.clear
+      example.run
+    ensure
+      ARGV.replace(old_argv)
+    end
+
+    before do
+      without_partial_double_verification { allow($stderr).to receive(:ohai) }
+      formula_path.dirname.mkpath
+      formula_path.write <<~RUBY
+        class Bar < Formula
+          url "https://brew.sh/bar-1.0.tar.gz"
+        end
+      RUBY
+      tap.alias_dir.mkpath
+      (tap.alias_dir/"23bar").make_relative_symlink(formula_path)
+      (tap.path/"formula_renames.json").write(JSON.generate({ "oldbar" => "bar" }))
+    end
+
+    after do
+      FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"thirdparty"
+    end
+
+    it "refuses to load an untrusted formula through an alias or rename" do
+      ARGV.replace([full_name])
+
+      expect { Formulary.factory(full_name, warn: false) }
+        .to raise_error(Homebrew::UntrustedTapError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "does not allow a formula file through an alias or rename" do
+      ARGV.replace([full_name])
+
+      expect(described_class.trusted_formula_file?(formula_path)).to be(false)
+    end
+
+    it "requires the canonical name when implicitly trusting a formula" do
+      formula_path.write("raise 'must not evaluate formula to trust it'\n")
+
+      expect { described_class.trust_fully_qualified_items!([full_name]) }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "requires the canonical name when inferring a trust target" do
+      expect { described_class.target(full_name) }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "requires the canonical name when the formula type is specified" do
+      formula_path.write("raise 'must not evaluate formula to trust it'\n")
+
+      expect { described_class.trust_fully_qualified_items!([full_name], type: :formula) }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "requires the canonical name for an explicit formula trust target" do
+      expect { described_class.target(full_name, type: :formula) }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "does not write trust entries when refusing an alias or rename" do
+      expect do
+        described_class.trust_fully_qualified_items!([full_name])
+      rescue UsageError
+        nil
+      end.not_to change { described_class.trust_file.exist? }
+    end
+
+    it "loads an alias or rename after trusting its canonical name" do
+      described_class.trust!(*described_class.target("#{tap.name}/bar", type: :formula))
+      ARGV.replace([full_name])
+
+      expect(Formulary.factory(full_name, warn: false).full_name).to eq("#{tap.name}/bar")
+    end
+
+    it "does not grant additional trust when installing an already trusted target" do
+      described_class.trust!(:formula, "#{tap.name}/bar")
+
+      expect { described_class.trust_fully_qualified_items!([full_name]) }
+        .not_to change { described_class.trust_file.read }
+    end
+
+    it "prefers aliases and renames to formula filenames" do
+      (tap.formula_dir/"#{name}.rb").write("raise 'must not trust the shadowed formula'\n")
+
+      expect { described_class.trust_fully_qualified_items!([full_name]) }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "does not authorise the shadowed formula file" do
+      (tap.formula_dir/"#{name}.rb").write("raise 'must not load the shadowed formula'\n")
+      ARGV.replace([full_name])
+
+      expect { described_class.require_trusted_formula!(name, tap.formula_dir/"#{name}.rb") }
+        .to raise_error(Homebrew::UntrustedTapError)
+    end
+
+    it "requires the canonical name for a custom remote" do
+      allow(tap).to receive(:remote).and_return("https://gitlab.com/other/repo")
+
+      expect { described_class.target(full_name, type: :formula) }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+
+    it "resolves an alias or rename when revoking canonical trust" do
+      described_class.trust!(:formula, "#{tap.name}/bar")
+
+      expect(described_class.target(full_name, type: :formula, include_existing: true))
+        .to eq([:formula, "#{tap.name}/bar"])
+    end
+
+    it "preserves existing literal entries for revocation" do
+      described_class.trust!(:formula, full_name)
+
+      expect(described_class.target(full_name, type: :formula, include_existing: true))
+        .to eq([:formula, full_name])
+    end
+
+    it "does not allow the unqualified name" do
+      ARGV.replace([name])
+
+      expect { described_class.require_trusted_formula!("bar", formula_path) }
+        .to raise_error(Homebrew::UntrustedTapError)
+    end
+
+    it "does not allow unrelated formulae" do
+      ARGV.replace([full_name])
+
+      expect { described_class.require_trusted_formula!("other", tap.formula_dir/"other.rb") }
+        .to raise_error(Homebrew::UntrustedTapError)
+    end
+
+    it "does not allow casks with the resolved formula name" do
+      ARGV.replace([full_name])
+
+      expect { described_class.require_trusted_cask!("bar", tap.cask_dir/"bar.rb") }
+        .to raise_error(Homebrew::UntrustedTapError)
+    end
+
+    it "does not allow a formula symlinked into another tap" do
+      target_path = Tap.fetch("thirdparty", "other").formula_dir/"bar.rb"
+      target_path.dirname.mkpath
+      FileUtils.mv formula_path, target_path
+      formula_path.make_relative_symlink(target_path)
+      ARGV.replace([full_name])
+
+      expect { Formulary.factory(full_name, warn: false) }
+        .to raise_error(Homebrew::UntrustedTapError, %r{thirdparty/other/bar})
+    end
+
+    it "does not trust a missing formula" do
+      formula_path.unlink
+
+      described_class.trust_fully_qualified_items!([full_name])
+
+      expect(described_class.trusted_entries(:formula)).to be_empty
+    end
+
+    it "requires new canonical trust when the explicitly named target changes" do
+      described_class.trust!(*described_class.target("#{tap.name}/bar", type: :formula))
+      (tap.formula_dir/"other.rb").write("raise 'must not evaluate the new target'\n")
+      (tap.alias_dir/"23bar").unlink
+      (tap.alias_dir/"23bar").make_relative_symlink(tap.formula_dir/"other.rb")
+      (tap.path/"formula_renames.json").write(JSON.generate({ "oldbar" => "other" }))
+      tap.clear_cache
+      ARGV.replace([full_name])
+
+      expect { Formulary.factory(full_name, warn: false) }
+        .to raise_error(Homebrew::UntrustedTapError, %r{thirdparty/foo/other})
+    end
+
+    it "does not use another remote's metadata for a declared remote" do
+      allow(tap).to receive(:remote).and_return("https://gitlab.com/other/repo")
+
+      expect(described_class.target(full_name, type: :formula, tap_remote: "https://gitlab.com/different/repo"))
+        .to eq([:formula, "https://gitlab.com/different/repo/#{name}"])
+    end
+
+    it "requires the canonical name for a matching declared remote" do
+      allow(tap).to receive(:remote).and_return("https://gitlab.com/other/repo")
+
+      expect { described_class.target(full_name, type: :formula, tap_remote: "https://gitlab.com/other/repo") }
+        .to raise_error(UsageError, %r{brew trust --formula thirdparty/foo/bar})
+    end
+  end
+
+  it_behaves_like "a fully qualified formula alias or rename", "23bar"
+  it_behaves_like "a fully qualified formula alias or rename", "oldbar"
+
+  it "does not follow cross-tap migrations" do
+    tap = Tap.fetch("thirdparty", "foo")
+    tap.path.mkpath
+    (tap.path/"tap_migrations.json").write(JSON.generate({ "migrated" => "thirdparty/other/bar" }))
+    target_path = Tap.fetch("thirdparty", "other").formula_dir/"bar.rb"
+    target_path.dirname.mkpath
+    target_path.write("raise 'must not evaluate migrated formula'\n")
+    old_argv = ARGV.dup
+    ARGV.replace(["#{tap.name}/migrated"])
+    described_class.trust_fully_qualified_items!(ARGV)
+
+    expect { Formulary.factory(ARGV.fetch(0), warn: false) }
+      .to raise_error(Homebrew::UntrustedTapError, %r{thirdparty/other/bar})
+  ensure
+    ARGV.replace(old_argv) if old_argv
     FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"thirdparty"
   end
 
