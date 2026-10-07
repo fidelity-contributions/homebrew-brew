@@ -141,7 +141,7 @@ RSpec.describe Homebrew::Cmd::Exec do
       )
 
       expect do
-        expect(brew_sh("x", executable_name, brew_sh_env))
+        expect(brew_sh("x", "--formulae=#{formula_name}", executable_name, brew_sh_env))
           .to be_a_success
       end.to(
         output("active-version\n").to_stdout
