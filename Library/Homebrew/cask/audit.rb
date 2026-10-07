@@ -546,7 +546,8 @@ module Cask
       Homebrew::API.with_no_api_env do
         return unless core_formula_names.include?(cask.token)
 
-        add_error("cask token conflicts with an existing homebrew/core formula: #{Formatter.url(core_formula_url)}")
+        add_error("cask token conflicts with an existing homebrew/core formula: #{Formatter.url(core_formula_url)}",
+                  strict_only: true)
       end
     end
 

@@ -2006,15 +2006,22 @@ RSpec.describe Cask::Audit, :cask do
     end
 
     describe "token conflicts" do
+      let(:only) { ["token_conflicts"] }
       let(:cask_token) { "with-binary" }
+      let(:formula_names) { %w[with-binary other-formula] }
 
-      context "when cask token conflicts with a core formula" do
-        let(:formula_names) { %w[with-binary other-formula] }
+      before do
+        allow(audit).to receive(:core_formula_names).and_return(formula_names)
+      end
 
-        it "warns about conflicts" do
-          expect(audit).to receive(:core_formula_names).and_return(formula_names)
-          expect(run).to error_with(/cask token conflicts/)
-        end
+      context "when new cask token conflicts with a core formula" do
+        let(:new_cask) { true }
+
+        it { is_expected.to error_with(/cask token conflicts/) }
+      end
+
+      context "when existing cask token conflicts with a core formula" do
+        it { is_expected.not_to error_with(/cask token conflicts/) }
       end
     end
 
