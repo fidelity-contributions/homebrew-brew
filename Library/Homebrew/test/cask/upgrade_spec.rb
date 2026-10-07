@@ -698,7 +698,7 @@ RSpec.describe Cask::Upgrade, :cask do
       )
 
       expect(Cask::Quarantine).to receive(:inherit_user_approval!)
-        .with(download_path: local_caffeine_path, approved_paths: [])
+        .with(download_path: local_caffeine_path)
 
       described_class.upgrade_casks!(local_caffeine, args:)
     end

@@ -419,7 +419,6 @@ module Cask
       new_artifacts_installed = false
       old_signing_identities = T.let({}, T::Hash[String, T.nilable(Quarantine::SigningIdentity)])
       old_user_approved = T.let({}, T::Hash[String, T::Boolean])
-      old_approved_paths = T.let({}, T::Hash[String, T::Array[String]])
       old_unquarantined = T.let({}, T::Hash[String, T::Boolean])
 
       begin
@@ -436,16 +435,10 @@ module Cask
         # This snapshot reads quarantine metadata, so it needs the same guard as the code below that uses it.
         if Quarantine.available?
           old_cask.artifacts.grep(Artifact::App).each do |artifact|
-            user_approved = if artifact.target.exist?
+            old_user_approved[artifact.target.to_s] = if artifact.target.exist?
               Quarantine.user_approved?(artifact.target)
             else
               false
-            end
-            old_user_approved[artifact.target.to_s] = user_approved
-            # Only an already approved app has approvals to pass on, so skip the scan otherwise.
-            if user_approved
-              old_approved_paths[artifact.target.to_s] =
-                Quarantine.user_approved_paths(artifact.target)
             end
             old_unquarantined[artifact.target.to_s] = if artifact.target.exist?
               Quarantine.detect(artifact.target).blank?
@@ -475,10 +468,7 @@ module Cask
               odebug "#{new_cask.token} wasn't quarantined so approving the new version to match."
             end
             new_cask.artifacts.grep(Artifact::App).each do |artifact|
-              Quarantine.inherit_user_approval!(
-                download_path:  artifact.target,
-                approved_paths: old_approved_paths.fetch(artifact.target.to_s, []),
-              )
+              Quarantine.inherit_user_approval!(download_path: artifact.target)
             rescue CaskQuarantineReleaseError => e
               odebug e
               opoo "Homebrew couldn't inherit #{new_cask.token}'s quarantine approval so macOS may prompt at " \

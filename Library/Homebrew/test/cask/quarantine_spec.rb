@@ -300,11 +300,14 @@ RSpec.describe Cask::Quarantine do
       klass.inherit_user_approval!(download_path: file)
     end
 
-    it "mirrors approval onto shared paths and skips paths this version does not have" do
+    it "inherits approval for nested helpers only within the literal app path" do
       mktmpdir do |tmpdir|
-        app = tmpdir/"Test.app"
-        (app/"Contents/MacOS").mkpath
-        FileUtils.touch app/"Contents/MacOS/Test"
+        app = tmpdir/"Test?.app"
+        helper = app/"Contents/Resources/Copied Helper.app"
+        (helper/"Contents/MacOS").mkpath
+        FileUtils.touch helper/"Contents/MacOS/Helper"
+        (helper/"external").make_symlink(tmpdir)
+        (tmpdir/"TestX.app/Contents").mkpath
 
         allow(klass).to receive_messages(
           detect: true,
@@ -321,35 +324,19 @@ RSpec.describe Cask::Quarantine do
             Cask::Quarantine::QUARANTINE_ATTRIBUTE,
             "03c1;6a51855d;;3C86362A-29CA-4D55-90E7-A6621B9CC78D",
           ],
-          input:        [app, app/"Contents/MacOS/Test"].join("\0"),
+          input:        [
+            app,
+            app/"Contents",
+            app/"Contents/Resources",
+            helper,
+            helper/"Contents",
+            helper/"Contents/MacOS",
+            helper/"Contents/MacOS/Helper",
+          ].join("\0"),
           print_stderr: false,
         ).and_return(instance_double(SystemCommand::Result, success?: true))
 
-        klass.inherit_user_approval!(download_path:  app,
-                                     approved_paths: ["Contents/MacOS/Test", "Contents/MacOS/Removed"])
-      end
-    end
-  end
-
-  describe ".user_approved_paths" do
-    let(:xattr) { Pathname("/usr/bin/xattr") }
-
-    it "returns only the approved paths, relative to the directory" do
-      mktmpdir do |tmpdir|
-        app = tmpdir/"Test.app"
-        (app/"Contents").mkpath
-        FileUtils.touch app/"Contents/approved"
-        FileUtils.touch app/"Contents/unapproved"
-
-        allow(klass).to receive_messages(xattr: xattr, system_command: instance_double(
-          SystemCommand::Result,
-          stdout: "#{app}: 03c1;6a51855d;;uuid\n" \
-                  "#{app}/Contents: 0381;6a51855d;;uuid\n" \
-                  "#{app}/Contents/approved: 03c1;6a51855d;;uuid\n" \
-                  "#{app}/Contents/unapproved: 0381;6a51855d;;uuid\n",
-        ))
-
-        expect(klass.user_approved_paths(app)).to eq(["Contents/approved"])
+        klass.inherit_user_approval!(download_path: app)
       end
     end
   end
