@@ -177,6 +177,7 @@
 # Unignore our configuration/completions/documentation.
 !/.devcontainer
 !/.github
+!/.oss-scanner
 !/completions
 !/docs
 !/manpages
