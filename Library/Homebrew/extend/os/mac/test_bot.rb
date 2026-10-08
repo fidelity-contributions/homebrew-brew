@@ -57,7 +57,7 @@ module OS
         sig { void }
         def cleanup_github_actions_hosted_runner
           delete_or_move HOMEBREW_CELLAR.glob("*")
-          delete_or_move HOMEBREW_CASKROOM.glob("session-manager-plugin")
+          delete_or_move HOMEBREW_CASKROOM.glob("*")
 
           delete_or_move %w[
             Mono.framework

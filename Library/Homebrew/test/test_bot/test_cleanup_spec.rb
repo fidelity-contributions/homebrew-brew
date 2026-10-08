@@ -54,6 +54,21 @@ RSpec.describe Homebrew::TestBot do
   end
 
   describe Homebrew::TestBot::CleanupBefore do
+    it "cleans all preinstalled cask records", :needs_macos do
+      stub_const("HOMEBREW_CASKROOM", Cask::Caskroom.path)
+      cleanup = described_class.new
+      (HOMEBREW_CASKROOM/"gcloud-cli").mkpath
+      (HOMEBREW_CASKROOM/"session-manager-plugin").mkpath
+      allow(cleanup).to receive(:delete_or_move)
+
+      expect(cleanup).to receive(:delete_or_move).with([
+        HOMEBREW_CASKROOM/"gcloud-cli",
+        HOMEBREW_CASKROOM/"session-manager-plugin",
+      ])
+
+      cleanup.cleanup_github_actions_hosted_runner
+    end
+
     describe "#run!" do
       it "restores trust for the tap being tested after cleanup" do
         tap = Tap.fetch("thirdparty", "foo")

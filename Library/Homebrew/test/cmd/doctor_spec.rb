@@ -86,11 +86,14 @@ RSpec.describe Homebrew::Cmd::Doctor do
     allow(Cask::Tab).to receive(:for_cask).with(cask).and_return(tab)
 
     expect(Homebrew::Diagnostic::Checks.new.check_missing_deps&.to_s)
-      .to include(
-        "Some installed formulae or casks are missing dependencies.",
-        "brew install foo local-caffeine unar",
-        "Run `brew missing` for more details.",
-      )
+      .to eq <<~EOS.rstrip
+        Some installed formulae or casks are missing dependencies:
+          needs-foo: foo
+          with-depends-on-everything: local-caffeine unar
+
+        You should `brew install` the missing dependencies:
+          brew install foo local-caffeine unar
+      EOS
   end
 
   specify "check_for_unreadable_installed_formula skips untrusted installed formulae" do
