@@ -99,28 +99,76 @@ module Homebrew
           if redirected_remotes_path.file?
             begin
               denied_redirects = []
+              redirected_paths = []
               redirected_remotes_path.each_line do |line|
                 tap_path, redirected_remote = line.chomp.split("\t", 2)
                 next if tap_path.blank? || redirected_remote.blank?
                 next unless (tap = Tap.from_path(tap_path))
+                next if redirected_paths.include?(tap_path)
+
+                redirected_paths << tap_path
 
                 old_repository_var_suffix = tap.repository_var_suffix
                 begin
                   tap.apply_redirected_remote!(redirected_remote, quiet: args.quiet?)
                 rescue TapRedirectNotAllowedError => e
+                  denied_redirects << e.message
                   # update.sh may already have merged redirected content, so roll back every denied tap.
                   before_revision = ENV.fetch("HOMEBREW_UPDATE_BEFORE#{old_repository_var_suffix}", nil)
                   if before_revision.present? && tap.installed?
-                    git_args = ["-C", tap.path.to_s]
-                    SystemCommand.safe_system "git", *git_args, "reset", "--hard", "-q", before_revision
-                    branch = Utils.popen_read("git", *git_args, "symbolic-ref", "--short", "-q", "HEAD").chomp
-                    branch = branch.presence || tap.git_repository.origin_branch_name
-                    if branch.present?
+                    begin
+                      git_args = ["-C", tap.path.to_s]
+                      branch = ENV.fetch("HOMEBREW_UPDATE_BRANCH#{old_repository_var_suffix}", nil).presence ||
+                               tap.git_repository.origin_branch_name
+                      raise "Cannot identify the updated branch for #{tap.name}." if branch.blank?
+
+                      current_branch = Utils.popen_read("git", *git_args, "symbolic-ref", "--short", "-q",
+                                                        "HEAD").chomp
+                      if current_branch.blank? || current_branch == branch
+                        local_changes = Utils.popen_read("git", *git_args, "status", "--porcelain",
+                                                         "--untracked-files=all").present?
+                        if local_changes
+                          if Utils.popen_read("git", *git_args, "ls-files", "-u").present?
+                            SystemCommand.safe_system "git", *git_args, "reset", "--mixed", "-q"
+                          end
+                          stash_before = Utils.popen_read("git", *git_args, "rev-parse", "-q", "--verify",
+                                                          "refs/stash").chomp
+                          SystemCommand.safe_system "git", *git_args, "-c", "core.hooksPath=#{File::NULL}",
+                                                    "stash", "push", "--include-untracked", "-q"
+                          stash_after = Utils.popen_read("git", *git_args, "rev-parse", "-q", "--verify",
+                                                         "refs/stash").chomp
+                          if stash_after == stash_before
+                            raise "Could not stash local changes in #{tap.path} before redirect rollback."
+                          end
+                        end
+                        SystemCommand.safe_system "git", *git_args, "reset", "--hard", "-q", before_revision
+                      else
+                        SystemCommand.safe_system "git", *git_args, "update-ref", "refs/heads/#{branch}",
+                                                  before_revision
+                      end
                       SystemCommand.safe_system "git", *git_args, "update-ref", "refs/remotes/origin/#{branch}",
                                                 before_revision
+                      if local_changes && !SystemCommand.run("git", args: [*git_args, "-c", "core.hooksPath=#{File::NULL}",
+                                                                           "stash", "pop", "-q"]).success?
+                        stash_message = "Could not restore local changes for #{tap.name}. " \
+                                        "Rollback stash #{stash_after} contains the interrupted working tree. "
+                        stash_message << if stash_before.present?
+                          "Earlier stash #{stash_before} may contain prior edits; " \
+                            "inspect both before applying either."
+                        else
+                          "Inspect it before applying."
+                        end
+                        denied_redirects << stash_message
+                      end
+                    rescue => rollback_error
+                      denied_redirects << "Could not roll back #{tap.name}: #{rollback_error.message}\n" \
+                                          "Pre-update revision: #{before_revision}.\n" \
+                                          "Inspect its Git state and stash. " \
+                                          "After saving local changes, run " \
+                                          "`git -C #{tap.path.to_s.shellescape} reset --hard #{before_revision}` " \
+                                          "only if the updated branch is checked out."
                     end
                   end
-                  denied_redirects << e.message
                   next
                 end
                 new_repository_var_suffix = tap.repository_var_suffix

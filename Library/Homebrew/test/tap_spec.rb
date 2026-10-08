@@ -1,6 +1,7 @@
 # typed: true
 # frozen_string_literal: true
 
+require "securerandom"
 require "utils/output"
 
 RSpec.describe Tap do
@@ -582,6 +583,257 @@ RSpec.describe Tap do
   end
 
   describe "#update_remote_from_git_redirect!" do
+    it "refuses a forged redirect from a real SSH clone", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("attacker", repository)
+      victim_path = described_class.fetch("victim", repository).path
+      source_repo = mktmpdir/"source"
+      system "git", "init", "-q", source_repo.to_s
+      system "git", "-C", source_repo.to_s, "commit", "-q", "--allow-empty", "-m", "initial"
+      relay = source_repo.parent/"ssh-relay"
+      relay.write <<~SH
+        #!/bin/sh
+        printf '%s\\n' 'warning: redirecting to https://github.com/victim/homebrew-#{repository}' >&2
+        exec #{Utils::Git.git.to_s.shellescape} upload-pack #{source_repo.to_s.shellescape}
+      SH
+      relay.chmod(0755)
+      ENV["GIT_SSH_COMMAND"] = relay.to_s.shellescape
+      ENV["GIT_SSH_VARIANT"] = "simple"
+
+      expect do
+        tap.install(clone_target: "ssh://attacker.example/homebrew-#{repository}", quiet: true)
+      end.to raise_error(TapRedirectNotAllowedError)
+      expect(tap).not_to be_installed
+      expect(victim_path).not_to exist
+    ensure
+      FileUtils.rm_rf tap.path.parent if tap
+      FileUtils.rm_rf victim_path.parent if victim_path
+      FileUtils.rm_rf source_repo.parent if source_repo
+    end
+
+    it "refuses an untrusted third-party rename from a non-GitHub remote", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("attacker", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("victim", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin", "ssh://attacker.example/homebrew-#{repository}"
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/victim/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+      expect([tap.name, tap.path, Utils.popen_read("git", "-C", old_path, "config", "remote.origin.url").chomp])
+        .to eq(["attacker/#{repository}", old_path, "ssh://attacker.example/homebrew-#{repository}"])
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "refuses a tap rename from an unauthenticated GitHub remote", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("attacker", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("victim", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin",
+             "http://github.com/attacker/homebrew-#{repository}"
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/victim/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "refuses a tap rename when Git rewrites a GitHub origin to another host", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("attacker", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("victim", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin",
+             "https://github.com/attacker/homebrew-#{repository}"
+      system "git", "-C", old_path.to_s, "config", "url.ssh://attacker.example/.insteadOf", "https://github.com/"
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/victim/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "follows an untrusted rename when the destination has no trust", :trust_store do
+      require "trust"
+
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("untrustedold", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("untrustednew", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin",
+             "https://github.com/untrustedold/homebrew-#{repository}"
+
+      tap.update_remote_from_git_redirect!(
+        "warning: redirecting to https://github.com/untrustednew/homebrew-#{repository}\n",
+        quiet: true,
+      )
+
+      expect([tap.name, tap.path, Homebrew::Trust.trusted_tap?(tap)])
+        .to eq(["untrustednew/#{repository}", new_path, false])
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "follows a tap rename from an authenticated GitHub SSH remote", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("untrustedold", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("untrustednew", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin",
+             "git@github.com:untrustedold/homebrew-#{repository}"
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/untrustednew/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to change(tap, :name).from("untrustedold/#{repository}").to("untrustednew/#{repository}")
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "refuses an untrusted rename into a formula trust entry", :trust_store do
+      require "trust"
+
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("untrustedold", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("trustednew", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin",
+             "https://github.com/untrustedold/homebrew-#{repository}"
+      Homebrew::Trust.trust!(:formula, "trustednew/#{repository}/tool")
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/trustednew/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      Homebrew::Trust.clear!(:formula)
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "refuses an untrusted redirect into an existing remote trust entry", :trust_store do
+      require "trust"
+
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("untrustedold", repository)
+      tap.path.mkpath
+      system "git", "-C", tap.path.to_s, "init"
+      system "git", "-C", tap.path.to_s, "remote", "add", "origin",
+             "https://github.com/untrustedold/homebrew-#{repository}"
+      Homebrew::Trust.trust!(:tap, "ssh://trusted.example/homebrew-#{repository}")
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to ssh://trusted.example/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      Homebrew::Trust.clear!(:tap)
+      FileUtils.rm_rf tap.path.parent if tap
+    end
+
+    it "refuses a same-name redirect while formula trust still applies", :trust_store do
+      require "trust"
+
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("formulaold", repository)
+      tap.path.mkpath
+      system "git", "-C", tap.path.to_s, "init"
+      system "git", "-C", tap.path.to_s, "remote", "add", "origin",
+             "https://github.com/formulaold/homebrew-#{repository}"
+      Homebrew::Trust.trust!(:formula, "formulaold/#{repository}/tool")
+
+      expect do
+        tap.update_remote_from_git_redirect!("warning: redirecting to ssh://example.test/homebrew-#{repository}\n",
+                                             quiet: true)
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      Homebrew::Trust.clear!(:formula)
+      FileUtils.rm_rf tap.path.parent if tap
+    end
+
+    it "refuses to promote an untrusted checkout to an official tap", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("untrustedredirect", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("Homebrew", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin", "ssh://example.test/homebrew-#{repository}"
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/Homebrew/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+      expect([tap.name, tap.path, Utils.popen_read("git", "-C", old_path, "config", "remote.origin.url").chomp])
+        .to eq(["untrustedredirect/#{repository}", old_path, "ssh://example.test/homebrew-#{repository}"])
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path if new_path
+    end
+
+    it "refuses to promote an explicitly trusted third-party checkout to an official tap", :trust_store do
+      require "trust"
+
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("trustedredirect", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("Homebrew", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin", "ssh://example.test/homebrew-#{repository}"
+      Homebrew::Trust.trust!(:tap, "ssh://example.test/homebrew-#{repository}")
+
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/Homebrew/homebrew-#{repository}\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      Homebrew::Trust.clear!(:tap)
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path if new_path
+    end
+
     it "moves default GitHub taps to the redirected name and invalidates old trust", :trust_store do
       require "trust"
 
@@ -636,22 +888,86 @@ RSpec.describe Tap do
       FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"newoutput"
     end
 
-    it "updates the core cask tap remote from a redirect", :trust_store do
+    it "refuses to promote a core cask checkout from a legacy remote", :trust_store do
       tap = CoreCaskTap.instance
       tap.path.mkpath
       system "git", "-C", tap.path.to_s, "init"
       system "git", "-C", tap.path.to_s, "remote", "add", "origin", "https://github.com/caskroom/homebrew-cask"
 
-      tap.update_remote_from_git_redirect!(
-        "warning: redirecting to https://github.com/Homebrew/homebrew-cask\n",
-        quiet: true,
-      )
+      expect do
+        tap.update_remote_from_git_redirect!(
+          "warning: redirecting to https://github.com/Homebrew/homebrew-cask\n",
+          quiet: true,
+        )
+      end.to raise_error(TapRedirectNotAllowedError)
 
       expect(Utils.popen_read("git", "-C", tap.path, "config", "remote.origin.url").chomp)
-        .to eq("https://github.com/Homebrew/homebrew-cask")
+        .to eq("https://github.com/caskroom/homebrew-cask")
     ensure
       CoreCaskTap.instance.clear_cache
       FileUtils.rm_rf CoreCaskTap.instance.path
+    end
+
+    it "updates the same official tap remote in API mode", :trust_store do
+      tap = CoreCaskTap.instance
+      tap.path.mkpath
+      system "git", "-C", tap.path.to_s, "init"
+      system "git", "-C", tap.path.to_s, "remote", "add", "origin", "https://github.com/Homebrew/homebrew-cask"
+      allow(Homebrew::EnvConfig).to receive(:no_install_from_api?).and_return(false)
+
+      tap.update_remote_from_git_redirect!("warning: redirecting to https://mirror.example/homebrew-cask\n",
+                                           quiet: true)
+
+      expect(Utils.popen_read("git", "-C", tap.path, "config", "remote.origin.url").chomp)
+        .to eq("https://mirror.example/homebrew-cask")
+    ensure
+      CoreCaskTap.instance.clear_cache
+      FileUtils.rm_rf CoreCaskTap.instance.path
+    end
+
+    it "refuses to move an official tap to a third-party identity", :trust_store do
+      tap = CoreCaskTap.instance
+      old_path = tap.path
+      new_path = described_class.fetch("newowner", "cask").path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin", "https://github.com/Homebrew/homebrew-cask"
+      allow(Homebrew::EnvConfig).to receive(:no_install_from_api?).and_return(false)
+
+      expect do
+        tap.update_remote_from_git_redirect!("warning: redirecting to https://github.com/newowner/homebrew-cask\n",
+                                             quiet: true)
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      CoreCaskTap.instance.clear_cache
+      FileUtils.rm_rf old_path if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
+    it "refuses to promote a configured core mirror to another official tap", :trust_store do
+      tap = CoreTap.instance
+      old_path = tap.path
+      new_path = CoreCaskTap.instance.path
+
+      with_env(HOMEBREW_NO_INSTALL_FROM_API: "1", HOMEBREW_CORE_GIT_REMOTE: "https://mirror.example/core") do
+        old_path.mkpath
+        system "git", "-C", old_path.to_s, "init"
+        system "git", "-C", old_path.to_s, "remote", "add", "origin", "https://mirror.example/core"
+
+        expect do
+          tap.update_remote_from_git_redirect!(
+            "warning: redirecting to https://github.com/Homebrew/homebrew-cask\n",
+            quiet: true,
+          )
+        end.to raise_error(TapRedirectNotAllowedError)
+      end
+    ensure
+      CoreTap.instance.clear_cache
+      if old_path
+        FileUtils.rm_rf old_path/".git"
+        old_path.mkpath
+      end
+      FileUtils.rm_rf new_path if new_path
     end
 
     it "refuses an off-allowlist redirect and preserves the original remote" do
@@ -693,11 +1009,14 @@ RSpec.describe Tap do
     end
 
     it "applies a redirect to a tap allowed by name", :trust_store do
+      require "trust"
+
       allow(Homebrew::EnvConfig).to receive(:allowed_taps).and_return("newowner/foo")
       tap = described_class.fetch("oldowner", "foo")
       tap.path.mkpath
       system "git", "-C", tap.path.to_s, "init"
       system "git", "-C", tap.path.to_s, "remote", "add", "origin", "https://github.com/oldowner/homebrew-foo"
+      Homebrew::Trust.trust!(:tap, "oldowner/foo")
 
       tap.update_remote_from_git_redirect!(
         "warning: redirecting to https://github.com/newowner/homebrew-foo\n",
@@ -708,15 +1027,19 @@ RSpec.describe Tap do
       expect(Utils.popen_read("git", "-C", tap.path, "config", "remote.origin.url").chomp)
         .to eq("https://github.com/newowner/homebrew-foo")
     ensure
+      Homebrew::Trust.clear!(:tap)
       FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"oldowner"
       FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"newowner"
     end
 
     it "treats a redirect beginning with a dash as a URL, not a git option", :trust_store do
+      require "trust"
+
       tap = described_class.fetch("dashy", "foo")
       tap.path.mkpath
       system "git", "-C", tap.path.to_s, "init"
       system "git", "-C", tap.path.to_s, "remote", "add", "origin", "https://github.com/dashy/homebrew-foo"
+      Homebrew::Trust.trust!(:tap, "dashy/foo")
 
       tap.update_remote_from_git_redirect!(
         "warning: redirecting to -u:evil\n",
@@ -726,11 +1049,36 @@ RSpec.describe Tap do
       expect(Utils.popen_read("git", "-C", tap.path, "config", "remote.origin.url").chomp)
         .to eq("-u:evil")
     ensure
+      Homebrew::Trust.clear!(:tap)
       FileUtils.rm_rf HOMEBREW_TAP_DIRECTORY/"dashy"
     end
   end
 
   describe "#fix_remote_configuration" do
+    it "refuses to relabel an installed tap from a new custom remote", :trust_store do
+      repository = "redirect-#{SecureRandom.hex(8)}"
+      tap = described_class.fetch("attacker", repository)
+      old_path = tap.path
+      new_path = described_class.fetch("victim", repository).path
+      old_path.mkpath
+      system "git", "-C", old_path.to_s, "init"
+      system "git", "-C", old_path.to_s, "remote", "add", "origin",
+             "https://github.com/attacker/homebrew-#{repository}"
+      tap.remote
+      allow(tap.git_repository).to receive(:origin_branch_name).and_return("main")
+      allow(tap).to receive(:git_command!).and_return(instance_double(
+                                                        SystemCommand::Result,
+                                                        stderr: "warning: redirecting to https://github.com/victim/homebrew-#{repository}\n",
+                                                      ))
+
+      expect do
+        tap.install(clone_target: "ssh://attacker.example/homebrew-#{repository}", custom_remote: true, quiet: true)
+      end.to raise_error(TapRedirectNotAllowedError)
+    ensure
+      FileUtils.rm_rf old_path.parent if old_path
+      FileUtils.rm_rf new_path.parent if new_path
+    end
+
     it "terminates options before the requested remote" do
       tap = described_class.fetch("dashy", "foo")
       tap.path.mkpath
