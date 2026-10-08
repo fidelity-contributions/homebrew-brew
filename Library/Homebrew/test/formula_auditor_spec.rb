@@ -1000,13 +1000,19 @@ RSpec.describe Homebrew::FormulaAuditor do
     end
 
     it "suggests a detected default branch for Git head URLs" do
+      head_url = "https://github.com/Homebrew/homebrew-test-bot.git"
       fa = formula_auditor "foo", <<~RUBY, online: true, core_tap: true
         class Foo < Formula
           url "https://brew.sh/foo-1.0.tgz"
           sha256 "31cccfc6630528db1c8e3a06f6decf2a370060b982841cfab2b8677400a5092e"
-          head "https://github.com/Homebrew/homebrew-test-bot.git", branch: "master"
+          head "#{head_url}", branch: "master"
         end
       RUBY
+      allow(Utils::Git).to receive(:remote_exists?).and_return(true)
+      allow(Utils).to receive(:popen_read).and_call_original
+      allow(Utils).to receive(:popen_read)
+        .with("git", "ls-remote", "--symref", "--end-of-options", head_url, "HEAD")
+        .and_return("ref: refs/heads/main\tHEAD\n")
 
       message = "To use a non-default HEAD branch, add the formula to `head_non_default_branch_allowlist.json`."
       fa.audit_specs
