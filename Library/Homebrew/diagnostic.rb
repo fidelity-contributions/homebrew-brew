@@ -996,17 +996,13 @@ module Homebrew
       def check_missing_deps
         return if !HOMEBREW_CELLAR.exist? && !Cask::Caskroom.path.exist?
 
-        missing = Set.new
-        Homebrew::Missing.deps(Formula.installed, Cask::Caskroom.casks).each_value do |deps|
-          missing.merge(deps)
-        end
+        missing = Homebrew::Missing.deps(Formula.installed, Cask::Caskroom.casks)
         return if missing.empty?
 
-        commands = ["brew install #{missing.sort * " "}"]
+        commands = ["brew install #{missing.values.flatten.uniq.sort * " "}"]
         Finding.new(
-          <<~EOS,
-            Some installed formulae or casks are missing dependencies.
-            Run `brew missing` for more details.
+          append_indented_list(missing.map { |name, deps| Homebrew::Missing.format_deps(name, deps) }, <<~EOS),
+            Some installed formulae or casks are missing dependencies:
           EOS
           remediation: Finding::Remediation.new(
             text:     append_indented_list(commands, <<~EOS),

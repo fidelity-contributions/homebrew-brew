@@ -8,6 +8,12 @@ require "cask/tab"
 
 module Homebrew
   module Missing
+    # Formats missing dependencies, optionally prefixed with the package name.
+    sig { params(package_name: String, missing_dependencies: T::Array[String], show_name: T::Boolean).returns(String) }
+    def self.format_deps(package_name, missing_dependencies, show_name: true)
+      "#{"#{package_name}: " if show_name}#{missing_dependencies.join(" ")}"
+    end
+
     sig {
       params(formulae: T::Array[Formula], casks: T::Array[Cask::Cask], hide: T::Array[String], _block: T.nilable(
         T.proc.params(package_name: String, missing_dependencies: T::Array[String]).void,

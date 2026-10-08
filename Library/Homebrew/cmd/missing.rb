@@ -33,17 +33,14 @@ module Homebrew
         end
         formulae = formulae.sort
         casks = casks.sort_by(&:full_name)
-        hide = args.hide || []
-        package_count = formulae.size + casks.size
-        missing_deps = Homebrew::Missing.deps(formulae, casks, hide)
+        missing_deps = Homebrew::Missing.deps(formulae, casks, args.hide || [])
 
         (formulae + casks).each do |formula_or_cask|
           missing = missing_deps[formula_or_cask.full_name]
           next if missing.blank?
 
           Homebrew.failed = true
-          print "#{formula_or_cask}: " if package_count > 1
-          puts missing.join(" ")
+          puts Homebrew::Missing.format_deps(formula_or_cask.to_s, missing, show_name: formulae.size + casks.size > 1)
         end
       end
     end
