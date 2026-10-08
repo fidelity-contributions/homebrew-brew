@@ -21,6 +21,27 @@ RSpec.describe Homebrew::Style do
   describe ".check_style_json" do
     let(:dir) { mktmpdir }
 
+    it "requires test resources outside test blocks in homebrew/core without strict audits" do
+      formula = dir/"Taps/homebrew/homebrew-core/Formula/foo.rb"
+      formula.dirname.mkpath
+      formula.write <<~RUBY
+        class Foo < Formula
+          url "https://brew.sh/foo-1.0.tar.gz"
+
+          test do
+            resource "fixture" do
+              url "https://example.com/fixture.tar.gz"
+            end
+            resource("fixture").stage testpath
+          end
+        end
+      RUBY
+
+      expect(described_class.check_style_json([formula], except_cops: ["FormulaAuditStrict"])
+                            .for_path(formula).map(&:message))
+        .to include('Declare test resources outside `test do` using `resource "name", :test do`.')
+    end
+
     it "returns offenses when RuboCop reports offenses" do
       formula = dir/"my-formula.rb"
 
