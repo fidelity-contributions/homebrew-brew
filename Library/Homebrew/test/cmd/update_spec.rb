@@ -333,6 +333,7 @@ RSpec.describe Homebrew::Cmd::Update do
 
   it "treats redirected tap SHA API checks as updates" do
     args_file = test_root/"brew-args.txt"
+    update_env_file = test_root/"update-env.txt"
     fetches_file = test_root/"fetches.txt"
     metadata_queries_file = test_root/"metadata-queries.txt"
     repository = test_root/"repository"
@@ -346,7 +347,10 @@ RSpec.describe Homebrew::Cmd::Update do
     _stdout, stderr, status = run_update_shell(
       <<~SH,
         source "#{update_script}"
-        brew() { printf '%s\\n' "$@" > "#{args_file}"; }
+        brew() {
+          printf '%s\\n' "$@" > "#{args_file}"
+          env | grep '^HOMEBREW_UPDATE_' > "#{update_env_file}"
+        }
         fetch_api_file() { :; }
         git_init_if_necessary() { :; }
         git() {
@@ -438,6 +442,11 @@ RSpec.describe Homebrew::Cmd::Update do
     expect(status.success?).to be true
     expect(stderr).to be_empty
     expect(args_file.read).to eq("update-report\n--auto-update\n")
+    expect(update_env_file.read).to include(
+      "HOMEBREW_UPDATE_BEFORE_OLD_HOMEBREW_FOO=abc\n",
+      "HOMEBREW_UPDATE_AFTER_OLD_HOMEBREW_FOO=abc\n",
+      "HOMEBREW_UPDATE_BRANCH_OLD_HOMEBREW_FOO=main\n",
+    )
     expect(fetches_file.read).to eq("#{tap_path}\n")
     expect((repository/".git/REDIRECTED_REMOTES").read).to eq(
       "#{tap_path}\thttps://github.com/new/homebrew-foo.git\n",

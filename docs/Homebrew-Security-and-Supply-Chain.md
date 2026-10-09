@@ -76,7 +76,11 @@ See [Tap Trust](Tap-Trust.md) for how to trust only what you need with `brew tru
 
 Homebrew's [tap migrations](Migrating-A-Formula-To-A-Tap.md) stay within the Homebrew organisation: a formula or cask is only ever migrated into or within official Homebrew taps, never out to a third-party tap.
 A rename or move therefore cannot silently redirect users to a non-Homebrew repository.
-When GitHub redirects a tap after its owner or repository is renamed, Homebrew follows the verified redirect, retargets the local tap to the new canonical remote and invalidates trust entries for the old tap name rather than silently carrying trust across.
+Homebrew refuses a redirect that would change an official tap identity or give a checkout a new official identity.
+For any tap name change, Git's resolved origin URL must use HTTPS or SSH on GitHub.
+An untrusted tap can follow a redirect to a new untrusted location only if no existing tap, formula, cask or command trust entry matches the destination.
+For an allowed redirect, Homebrew retargets the local tap and invalidates trust entries for its old name rather than silently carrying trust across.
+If Homebrew refuses a third-party tap rename, untap the old name and tap the new location directly to fetch its contents.
 
 ### Not automatically deferring to upstream
 
