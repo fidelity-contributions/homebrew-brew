@@ -1621,9 +1621,55 @@ RSpec.describe Tap do
   end
 
   describe ".installed" do
+    after do
+      FileUtils.rm_rf [
+        HOMEBREW_TAP_DIRECTORY/".claude",
+        HOMEBREW_TAP_DIRECTORY/"homebrew/.claude",
+        HOMEBREW_TAP_DIRECTORY/"homebrew/not-a-tap",
+        HOMEBREW_TAP_DIRECTORY/"linked-tap",
+        HOMEBREW_TAP_DIRECTORY/"linked-user",
+        HOMEBREW_TAP_DIRECTORY/"loop",
+        HOMEBREW_TAP_DIRECTORY/"str4d.xyz",
+      ]
+    end
+
     it "includes only installed taps" do
+      (HOMEBREW_TAP_DIRECTORY/"homebrew/not-a-tap").write "not a directory"
+
       expect(described_class.installed)
         .to contain_exactly(CoreTap.instance, described_class.fetch("homebrew/foo"))
+    end
+
+    it "ignores hidden directories at either level" do
+      %w[.claude/.cc-writes .claude/homebrew-foo homebrew/.claude].each do |directory|
+        (HOMEBREW_TAP_DIRECTORY/directory).mkpath
+      end
+
+      expect(described_class.installed)
+        .to contain_exactly(CoreTap.instance, described_class.fetch("homebrew/foo"))
+    end
+
+    it "includes taps with dots in their names" do
+      tap = described_class.fetch("str4d.xyz", "some.tap")
+      tap.path.mkpath
+
+      expect(described_class.installed).to include(tap)
+    end
+
+    it "ignores symlink loops in user directories" do
+      ln_s "loop", HOMEBREW_TAP_DIRECTORY/"loop"
+
+      expect(described_class.installed)
+        .to contain_exactly(CoreTap.instance, described_class.fetch("homebrew/foo"))
+    end
+
+    it "includes symlinked taps" do
+      ln_s "homebrew", HOMEBREW_TAP_DIRECTORY/"linked-user"
+      (HOMEBREW_TAP_DIRECTORY/"linked-tap").mkpath
+      ln_s path, HOMEBREW_TAP_DIRECTORY/"linked-tap/homebrew-foo"
+
+      expect(described_class.installed)
+        .to include(described_class.fetch("linked-user/foo"), described_class.fetch("linked-tap/foo"))
     end
   end
 
