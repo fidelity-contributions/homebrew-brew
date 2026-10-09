@@ -201,7 +201,7 @@ class BinData::BasePrimitive < ::BinData::Base
   def hash; end
   def initialize_instance; end
   def initialize_shared_instance; end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(symbol, *, **, &); end
   def snapshot; end
   def value; end
   def value=(val); end
@@ -310,7 +310,7 @@ class BinData::Buffer < ::BinData::Base
   def do_read(io); end
   def do_write(io); end
   def initialize_instance; end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(*, **, &); end
   def raw_num_bytes; end
   def snapshot; end
 
@@ -351,7 +351,7 @@ class BinData::Choice < ::BinData::Base
   def do_write(*args); end
   def initialize_instance; end
   def initialize_shared_instance; end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(*, **, &); end
   def respond_to?(symbol, include_all = T.unsafe(nil)); end
   def selection; end
   def snapshot(*args); end
@@ -389,7 +389,7 @@ end
 
 module BinData::DSLMixin
   def dsl_parser(parser_type = T.unsafe(nil)); end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(*, **, &); end
   def to_ary; end
   def to_str; end
 end
@@ -442,7 +442,7 @@ class BinData::DSLMixin::DSLParser
   def endian(endian = T.unsafe(nil)); end
   def fields; end
   def hide(*args); end
-  def method_missing(*args, **kwargs, &block); end
+  def method_missing(*, **, &); end
   def namespace; end
   def namespace=(_arg0); end
   def parser_type; end
@@ -480,7 +480,7 @@ class BinData::DelayedIO < ::BinData::Base
   def do_write(io); end
   def include_obj?; end
   def initialize_instance; end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(*, **, &); end
   def num_bytes; end
   def read_now!; end
   def rel_offset; end
@@ -707,15 +707,15 @@ class BinData::LazyEvaluator
 
   def index; end
   def lazy_eval(val, overrides = T.unsafe(nil)); end
-  def method_missing(symbol, *args, **kwargs); end
+  def method_missing(symbol, *, **, &); end
   def parent; end
 
   private
 
   def callable?(obj); end
-  def eval_symbol_in_parent_context(symbol, args, kwargs); end
-  def recursively_eval(val, args, kwargs); end
-  def resolve_symbol_in_parent_context(symbol, args, kwargs); end
+  def eval_symbol_in_parent_context(symbol, *, **, &); end
+  def recursively_eval(val, *, **, &); end
+  def resolve_symbol_in_parent_context(symbol, *, **, &); end
 end
 
 module BinData::MultiFieldArgSeparator
@@ -732,7 +732,7 @@ class BinData::Primitive < ::BinData::BasePrimitive
   def do_num_bytes; end
   def do_write(io); end
   def initialize_instance; end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(symbol, *, **, &); end
   def respond_to?(symbol, include_private = T.unsafe(nil)); end
 
   private
@@ -929,7 +929,7 @@ class BinData::Section < ::BinData::Base
   def do_read(io); end
   def do_write(io); end
   def initialize_instance; end
-  def method_missing(symbol, *args, **kwargs, &block); end
+  def method_missing(*, **, &); end
   def snapshot; end
 
   private
@@ -1078,7 +1078,7 @@ BinData::Struct::RESERVED = T.let(T.unsafe(nil), Hash)
 
 class BinData::Struct::Snapshot < ::Hash
   def []=(key, value); end
-  def method_missing(symbol, *args, **kwargs); end
+  def method_missing(symbol, *, **, &); end
 
   private
 
