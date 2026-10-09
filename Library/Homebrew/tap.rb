@@ -1430,7 +1430,10 @@ class Tap
   sig { returns(T::Array[Tap]) }
   def self.installed
     cache[:installed] ||= if HOMEBREW_TAP_DIRECTORY.directory?
-      HOMEBREW_TAP_DIRECTORY.subdirs.flat_map(&:subdirs).map { from_path(it) }
+      # Keep hidden-directory exclusion in sync with cmd/update.sh.
+      HOMEBREW_TAP_DIRECTORY.glob("*").select(&:directory?)
+                            .flat_map { it.glob("*").select(&:directory?) }
+                            .map { from_path(it) }
     else
       []
     end

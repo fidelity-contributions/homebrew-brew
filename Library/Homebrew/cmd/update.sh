@@ -723,6 +723,7 @@ EOS
   rm -f "${missing_remote_ref_dirs_file}"
   rm -f "${redirected_remotes_file}"
 
+  # Keep hidden-directory exclusion in sync with Tap.installed in tap.rb.
   for DIR in "${HOMEBREW_REPOSITORY}" "${HOMEBREW_LIBRARY}"/Taps/*/*
   do
     if [[ -z "${HOMEBREW_NO_INSTALL_FROM_API}" ]] &&
