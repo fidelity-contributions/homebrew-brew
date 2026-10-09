@@ -3,8 +3,8 @@
 
 module Homebrew
   module Bootsnap
-    # This is the default Bundler group and its transitive dependencies. Optional
-    # groups must not rotate the compile cache used by the core load graph.
+    # This is the default Bundler group and its transitive dependencies.
+    # Keep it in sync with the dependency check in `vendor-gems`.
     CORE_GEM_NAMES = %w[
       bindata
       concurrent-ruby
@@ -30,9 +30,9 @@ module Homebrew
         checksum = Digest::SHA256.new
         checksum << RUBY_VERSION
         checksum << RUBY_PLATFORM
-        checksum << gem_directories
-                    .select { |gem| core_gem_names.any? { |name| gem.start_with?("#{name}-") } }
-                    .join(",")
+        # Processes started before a gem installation must not overwrite the
+        # load path cache used by processes started after it.
+        checksum << gem_directories.join(",")
 
         checksum.hexdigest
       end
@@ -75,8 +75,8 @@ module Homebrew
       installed_gem_directories = gem_directories.join(",")
       gem_directories_cache = File.join(cache_dir, "bootsnap/gem-directories")
       if !File.exist?(gem_directories_cache) || File.read(gem_directories_cache) != installed_gem_directories
-        # The compile cache is shared across optional groups, but Bootsnap treats
-        # gem load paths as immutable, so invalidate their separate index.
+        # Bootsnap treats gem load paths as immutable, so invalidate their index
+        # when the installed gems change.
         require "fileutils"
         FileUtils.rm_f load_path_cache
         FileUtils.mkdir_p File.dirname(gem_directories_cache)
