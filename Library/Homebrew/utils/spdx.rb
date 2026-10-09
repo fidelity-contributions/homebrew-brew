@@ -28,6 +28,28 @@ module SPDX
                               T.nilable(T::Hash[String, T.untyped]))
   end
 
+  sig { returns(T::Hash[String, T::Boolean]) }
+  def license_index
+    @license_index ||= T.let(
+      license_data["licenses"].to_h do |spdx_license|
+        [spdx_license["licenseId"].downcase, !!spdx_license["isDeprecatedLicenseId"]]
+      end,
+      T.nilable(T::Hash[String, T::Boolean]),
+    )
+  end
+
+  sig { returns(T::Hash[String, T::Boolean]) }
+  def exception_index
+    @exception_index ||= T.let(
+      exception_data["exceptions"].filter_map do |spdx_exception|
+        next if spdx_exception["isDeprecatedLicenseId"]
+
+        [spdx_exception["licenseExceptionId"].downcase, true]
+      end.to_h,
+      T.nilable(T::Hash[String, T::Boolean]),
+    )
+  end
+
   sig { returns(String) }
   def latest_tag
     @latest_tag ||= T.let(GitHub::API.open_rest(API_URL)["tag_name"], T.nilable(String))
@@ -87,26 +109,19 @@ module SPDX
   def valid_license?(license)
     return ALLOWED_LICENSE_SYMBOLS.include? license if license.is_a? Symbol
 
-    license = license.delete_suffix "+"
-    license_data["licenses"].any? { |spdx_license| spdx_license["licenseId"].downcase == license.downcase }
+    license_index.key?(license.delete_suffix("+").downcase)
   end
 
   sig { params(license: T.any(String, Symbol)).returns(T::Boolean) }
   def deprecated_license?(license)
-    return false if ALLOWED_LICENSE_SYMBOLS.include? license
-    return false unless valid_license?(license)
+    return false if license.is_a? Symbol
 
-    license = license.to_s.delete_suffix "+"
-    license_data["licenses"].none? do |spdx_license|
-      spdx_license["licenseId"].downcase == license.downcase && !spdx_license["isDeprecatedLicenseId"]
-    end
+    license_index.fetch(license.delete_suffix("+").downcase, false)
   end
 
   sig { params(exception: String).returns(T::Boolean) }
   def valid_license_exception?(exception)
-    exception_data["exceptions"].any? do |spdx_exception|
-      spdx_exception["licenseExceptionId"].downcase == exception.downcase && !spdx_exception["isDeprecatedLicenseId"]
-    end
+    exception_index.key?(exception.downcase)
   end
 
   sig {
