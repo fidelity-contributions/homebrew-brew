@@ -22,8 +22,10 @@ RSpec.describe Homebrew::Cmd::Update do
   it_behaves_like "a documented command", "update", shell: true
 
   def run_update_shell(script, env)
+    # Stop Git finding the enclosing checkout, e.g. after a failed `git init`. Use the
+    # parent as Git ignores a ceiling that is the current directory (e.g. `test_root`).
     Bundler.with_unbundled_env do
-      Open3.capture3(env, "/bin/bash", "-c", script)
+      Open3.capture3(env.merge("GIT_CEILING_DIRECTORIES" => test_root.dirname.to_s), "/bin/bash", "-c", script)
     end
   end
 
@@ -34,6 +36,17 @@ RSpec.describe Homebrew::Cmd::Update do
       FileUtils.ln_s repository_root/"Library/Homebrew/utils/#{name}.sh",
                      test_root/"Library/Homebrew/utils/#{name}.sh"
     end
+  end
+
+  it "stops Git from finding the enclosing repository" do
+    stdout, _stderr, status = run_update_shell(
+      <<~SH,
+        "#{Utils::Git.git}" -C "#{test_root}" rev-parse --git-dir
+      SH
+      {},
+    )
+
+    expect([status.success?, stdout]).to eq([false, ""])
   end
 
   it "installs Git when the Git wrapper cannot find an executable" do
@@ -75,7 +88,9 @@ RSpec.describe Homebrew::Cmd::Update do
           "#{Utils::Git.git}" -c init.defaultBranch=main -c user.name=Homebrew \\
             -c user.email=homebrew@example.com "$@"
         }
-        mkdir -p "#{repositories}" && cd "#{repositories}"
+        set -e
+        mkdir -p "#{repositories}"
+        cd "#{repositories}"
         git init -q remote
         git -C remote commit -q --allow-empty -m init
         git clone -q remote full

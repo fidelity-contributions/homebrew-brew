@@ -27,7 +27,9 @@ RSpec.describe Homebrew::DevCmd::BumpFormulaPr do
 
     expect do
       brew "bump-formula-pr", "--write-only", "--no-audit", "--version=0.2",
-           "--url=file://#{tarball}", "--sha256=#{tarball.sha256}", "testball"
+           "--url=file://#{tarball}", "--sha256=#{tarball.sha256}", "testball",
+           # Skip the autobump list check, which downloads the formula API.
+           "HOMEBREW_TEST_BOT_AUTOBUMP" => "1"
     end.to be_a_success
     expect(formula_path.read).to include("version \"0.2\"")
   end

@@ -1000,13 +1000,19 @@ RSpec.describe Homebrew::FormulaAuditor do
     end
 
     it "suggests a detected default branch for Git head URLs" do
+      head_url = "https://github.com/Homebrew/homebrew-test-bot.git"
       fa = formula_auditor "foo", <<~RUBY, online: true, core_tap: true
         class Foo < Formula
           url "https://brew.sh/foo-1.0.tgz"
           sha256 "31cccfc6630528db1c8e3a06f6decf2a370060b982841cfab2b8677400a5092e"
-          head "https://github.com/Homebrew/homebrew-test-bot.git", branch: "master"
+          head "#{head_url}", branch: "master"
         end
       RUBY
+      allow(Utils::Git).to receive(:remote_exists?).and_return(true)
+      allow(Utils).to receive(:popen_read).and_call_original
+      allow(Utils).to receive(:popen_read)
+        .with("git", "ls-remote", "--symref", "--end-of-options", head_url, "HEAD")
+        .and_return("ref: refs/heads/main\tHEAD\n")
 
       message = "To use a non-default HEAD branch, add the formula to `head_non_default_branch_allowlist.json`."
       fa.audit_specs
@@ -1014,30 +1020,37 @@ RSpec.describe Homebrew::FormulaAuditor do
       expect(fa.problems.last[:message]).to match(message)
     end
 
-    it "can specify a default branch without an allowlist if not in a core tap" do
+    it "can specify a non-default branch without an allowlist if not in a core tap" do
+      head_url = "https://github.com/Homebrew/homebrew-test-bot.git"
       fa = formula_auditor "foo", <<~RUBY, online: true
         class Foo < Formula
           url "https://brew.sh/foo-1.0.tgz"
           sha256 "31cccfc6630528db1c8e3a06f6decf2a370060b982841cfab2b8677400a5092e"
-          head "https://github.com/Homebrew/homebrew-test-bot.git", branch: "main"
+          head "#{head_url}", branch: "master"
         end
       RUBY
+      allow(Utils::Git).to receive(:remote_exists?).and_return(true)
+      allow(Utils).to receive(:popen_read).and_call_original
+      allow(Utils).to receive(:popen_read)
+        .with("git", "ls-remote", "--symref", "--end-of-options", head_url, "HEAD")
+        .and_return("ref: refs/heads/main\tHEAD\n")
 
       fa.audit_specs
-      expect(fa.problems).not_to match("Git `head` URL must specify a branch name")
+      expect(fa.problems).not_to include(a_hash_including(message: a_string_including("non-default HEAD branch")))
     end
 
     it "ignores `branch:` for non-Git head URLs" do
-      fa = formula_auditor "foo", <<~RUBY, online: true
+      fa = formula_auditor "foo", <<~RUBY, online: true, core_tap: true
         class Foo < Formula
           url "https://brew.sh/foo-1.0.tgz"
           sha256 "31cccfc6630528db1c8e3a06f6decf2a370060b982841cfab2b8677400a5092e"
           head "https://brew.sh/foo.tgz", branch: "develop"
         end
       RUBY
+      allow(Utils::Git).to receive(:remote_exists?).and_return(true)
 
       fa.audit_specs
-      expect(fa.problems).not_to match("Git `head` URL must specify a branch name")
+      expect(fa.problems).not_to include(a_hash_including(message: a_string_including("non-default HEAD branch")))
     end
 
     it "ignores `branch:` for `resource` URLs" do
@@ -1046,15 +1059,19 @@ RSpec.describe Homebrew::FormulaAuditor do
           url "https://brew.sh/foo-1.0.tgz"
           sha256 "31cccfc6630528db1c8e3a06f6decf2a370060b982841cfab2b8677400a5092e"
 
-          resource "bar" do
-            url "https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/Formula/bar.rb"
-            sha256 "31cccfc6630528db1c8e3a06f6decf2a370060b982841cfab2b8677400a5092e"
+          head do
+            url "https://brew.sh/foo.tgz"
+
+            resource "bar" do
+              url "https://brew.sh/bar.git"
+            end
           end
         end
       RUBY
+      allow(Utils::Git).to receive(:remote_exists?).and_return(true)
 
       fa.audit_specs
-      expect(fa.problems).not_to match("Git `head` URL must specify a branch name")
+      expect(fa.problems).not_to include(a_hash_including(message: a_string_including("must specify a branch name")))
     end
 
     it "allows versions with no throttle rate" do
